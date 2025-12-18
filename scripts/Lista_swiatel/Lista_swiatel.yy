@@ -1,0 +1,13 @@
+{
+  "$GMScript":"v1",
+  "%Name":"Lista_swiatel",
+  "isCompatibility":false,
+  "isDnD":false,
+  "name":"Lista_swiatel",
+  "parent":{
+    "name":"Czas",
+    "path":"folders/Czas.yy",
+  },
+  "resourceType":"GMScript",
+  "resourceVersion":"2.0",
+}

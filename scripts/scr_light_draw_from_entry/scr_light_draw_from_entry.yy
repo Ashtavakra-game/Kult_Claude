@@ -1,0 +1,13 @@
+{
+  "$GMScript":"v1",
+  "%Name":"scr_light_draw_from_entry",
+  "isCompatibility":false,
+  "isDnD":false,
+  "name":"scr_light_draw_from_entry",
+  "parent":{
+    "name":"Czas",
+    "path":"folders/Czas.yy",
+  },
+  "resourceType":"GMScript",
+  "resourceVersion":"2.0",
+}

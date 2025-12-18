@@ -1,0 +1,13 @@
+{
+  "$GMScript":"v1",
+  "%Name":"nineSlice",
+  "isCompatibility":false,
+  "isDnD":false,
+  "name":"nineSlice",
+  "parent":{
+    "name":"OgolneObjektGry",
+    "path":"folders/OgolneObjektGry.yy",
+  },
+  "resourceType":"GMScript",
+  "resourceVersion":"2.0",
+}

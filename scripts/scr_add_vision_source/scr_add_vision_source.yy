@@ -1,0 +1,13 @@
+{
+  "$GMScript":"v1",
+  "%Name":"scr_add_vision_source",
+  "isCompatibility":false,
+  "isDnD":false,
+  "name":"scr_add_vision_source",
+  "parent":{
+    "name":"Kult_game_0002",
+    "path":"Kult_game_0002.yyp",
+  },
+  "resourceType":"GMScript",
+  "resourceVersion":"2.0",
+}

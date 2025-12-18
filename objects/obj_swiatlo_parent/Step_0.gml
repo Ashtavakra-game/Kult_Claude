@@ -1,0 +1,1 @@
+scr_light_register(50, c_white, spr_light);

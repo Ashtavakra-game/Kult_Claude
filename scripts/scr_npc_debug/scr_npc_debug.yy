@@ -1,0 +1,13 @@
+{
+  "$GMScript":"v1",
+  "%Name":"scr_npc_debug",
+  "isCompatibility":false,
+  "isDnD":false,
+  "name":"scr_npc_debug",
+  "parent":{
+    "name":"NPC",
+    "path":"folders/NPC.yy",
+  },
+  "resourceType":"GMScript",
+  "resourceVersion":"2.0",
+}

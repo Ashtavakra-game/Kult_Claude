@@ -1,0 +1,13 @@
+{
+  "$GMScript":"v1",
+  "%Name":"scr_daynight_api",
+  "isCompatibility":false,
+  "isDnD":false,
+  "name":"scr_daynight_api",
+  "parent":{
+    "name":"Czas",
+    "path":"folders/Czas.yy",
+  },
+  "resourceType":"GMScript",
+  "resourceVersion":"2.0",
+}
