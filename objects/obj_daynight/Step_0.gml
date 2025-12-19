@@ -75,12 +75,12 @@ if (t < bounds.night_end) {
 // ZDARZENIE ZMIANY PORY (opcjonalne - do użycia przez inne systemy)
 // ============================================================================
 
+
 if (old_phase != global.daynight_phase) {
     show_debug_message("=== PHASE CHANGE: " + old_phase + " -> " + global.daynight_phase + " ===");
     
-    // Tu możesz dodać wywołania innych systemów, np.:
-    // with (npc_parent) { event_user(0); } // Powiadom NPC o zmianie pory
-    // with (obj_ui_controller) { event_user(1); } // Powiadom UI
+    // === NOWE: Hook dla systemu cech ===
+    scr_trait_on_phase_change(global.daynight_phase, old_phase);
 }
 
 // ============================================================================

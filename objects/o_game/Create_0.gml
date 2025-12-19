@@ -66,3 +66,12 @@ global.show_navgrid = false;
 // Możesz tu ustawić domyślne modyfikatory do testów:
 // scr_npc_set_global_mod("towarzyskosc", 30);  // więcej wizyt w karczmie
 // scr_npc_preset_imprezowicz();
+
+
+// === SYSTEM CECH LOKACJI ===
+scr_trait_system_init();
+scr_cyrograf_system_init();
+
+// Globalna wiara (nowa zmienna)
+global.global_faith = 100;  // 0-100, wysoka = stabilny świat
+

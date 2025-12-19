@@ -1,0 +1,13 @@
+{
+  "$GMScript":"v1",
+  "%Name":"scr_trait_system",
+  "isCompatibility":false,
+  "isDnD":false,
+  "name":"scr_trait_system",
+  "parent":{
+    "name":"OgolneObjektGry",
+    "path":"folders/OgolneObjektGry.yy",
+  },
+  "resourceType":"GMScript",
+  "resourceVersion":"2.0",
+}

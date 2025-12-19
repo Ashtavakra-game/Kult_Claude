@@ -131,6 +131,7 @@ function scr_npc_create()
     var _kind = argument1;
     var _home = argument2;
     _ensure_global_lists();
+	
 
     var traits = {
         pracowitosc: irandom_range(20, 80),
@@ -161,6 +162,14 @@ function scr_npc_create()
     };
 
     _inst.npc_data = {
+		location_mods: {
+        pracowitosc: 0,
+        roztargnienie: 0,
+        ciekawosc: 0,
+        podatnosc: 0,
+        towarzyskosc: 0,
+        wanderlust: 0
+    },
         kind: _kind,
         traits: traits,
         modifiers: modifiers,
@@ -250,9 +259,35 @@ function scr_npc_get_effective(_inst, _trait)
     return clamp(base + ind_mod + glob_mod, 0, 100);
 }
 
-function scr_npc_trait(_inst, _trait)
-{
-    return scr_npc_get_effective(_inst, _trait);
+function scr_npc_trait(_inst, _trait) {
+    if (!instance_exists(_inst)) return 0;
+    if (is_undefined(_inst.npc_data)) return 0;
+    
+    var base = 0;
+    var ind_mod = 0;
+    var glob_mod = 0;
+    var loc_mod = 0;  // NOWE
+    
+    if (variable_struct_exists(_inst.npc_data.traits, _trait)) {
+        base = variable_struct_get(_inst.npc_data.traits, _trait);
+    }
+    
+    if (variable_struct_exists(_inst.npc_data.modifiers, _trait)) {
+        ind_mod = variable_struct_get(_inst.npc_data.modifiers, _trait);
+    }
+    
+    if (!is_undefined(global.npc_mod) && variable_struct_exists(global.npc_mod, _trait)) {
+        glob_mod = variable_struct_get(global.npc_mod, _trait);
+    }
+    
+    // === NOWE: Modyfikatory lokacyjne ===
+    if (!is_undefined(_inst.npc_data.location_mods)) {
+        if (variable_struct_exists(_inst.npc_data.location_mods, _trait)) {
+            loc_mod = variable_struct_get(_inst.npc_data.location_mods, _trait);
+        }
+    }
+    
+    return clamp(base + ind_mod + glob_mod + loc_mod, 0, 100);
 }
 
 // =============================================================================
@@ -1004,81 +1039,87 @@ function scr_npc_start_work(_inst, _res)
     return true;
 }
 
-function scr_npc_finish_work(_inst)
-{
+function scr_npc_finish_work(_inst) {
     var _res = _inst.npc_data.target;
     if (instance_exists(_res) && !is_undefined(_res.resource_data)) {
         var rd = _res.resource_data;
         
         if (instance_exists(_inst.npc_data.home) && !is_undefined(_inst.npc_data.home.settlement_data)) {
-            var map = _inst.npc_data.home.settlement_data.resources;
+            var home = _inst.npc_data.home;
+            var map = home.settlement_data.resources;
+            
+            // === NOWE: Modyfikator produktywności od cech ===
+            var productivity_mult = scr_trait_get_productivity_modifier(home);
+            var actual_value = round(rd.wartosc * productivity_mult);
+            
             if (!ds_map_exists(map, rd.typ)) ds_map_add(map, rd.typ, 0);
             var prev = ds_map_find_value(map, rd.typ);
-            ds_map_replace(map, rd.typ, prev + rd.wartosc);
+            ds_map_replace(map, rd.typ, prev + actual_value);
         }
     }
     
-    // Oznacz pracę jako wykonaną
     _inst.npc_data.work_done_today = true;
     
-    // Dalsze decyzje zależne od pory dnia
     var phase = _npc_get_phase();
     if (phase == "evening" || phase == "night") {
-        // Wieczór/noc - wróć do domu (lub karczmy)
         _inst.npc_data.state = "idle";
     } else {
-        // Dzień - może dalej pracować
         _inst.npc_data.state = "idle";
     }
 }
-
-function scr_npc_handle_encounter(_inst, _enc)
-{
+function scr_npc_handle_encounter(_inst, _enc) {
     if (!instance_exists(_enc)) return;
-
+    
     var ed = _enc.encounter_data;
     if (is_undefined(ed)) return;
-
+    
     _inst.npc_data.visited_encounter = true;
     _inst.npc_data.traits.czas_bez_encountera = 0;
-
+    
+    // === NOWE: Znajdź najbliższy settlement i zastosuj modyfikatory ===
+    var nearest_settlement = noone;
+    var min_dist = infinity;
+    
+    for (var i = 0; i < ds_list_size(global.settlements); i++) {
+        var s = global.settlements[| i];
+        if (instance_exists(s)) {
+            var d = point_distance(_enc.x, _enc.y, s.x, s.y);
+            if (d < min_dist) {
+                min_dist = d;
+                nearest_settlement = s;
+            }
+        }
+    }
+    
+    // Modyfikator siły encountera od cech lokacji
+    var strength_mult = 1.0;
+    var fear_bonus = 0;
+    if (instance_exists(nearest_settlement) && min_dist < 200) {
+        strength_mult = scr_trait_get_encounter_modifier(nearest_settlement);
+        fear_bonus = scr_trait_get_fear_bonus(nearest_settlement);
+    }
+    
+    var modified_sila = ed.sila * strength_mult;
+    
     var roll = irandom(100);
     var podatnosc = scr_npc_trait(_inst, "podatnosc");
-    var threshold = podatnosc + ed.sila * 20;
-
+    var threshold = podatnosc + modified_sila * 20;
+    
     if (roll < threshold) {
         switch (ed.efekt) {
             case "strach":
-                _inst.npc_data.traits.stres += ed.sila * 10;
+                _inst.npc_data.traits.stres += modified_sila * 10;
                 if (!variable_struct_exists(ed, "akumulacja_strachu")) ed.akumulacja_strachu = 0;
-                ed.akumulacja_strachu += round(ed.sila);
+                ed.akumulacja_strachu += round(modified_sila) + fear_bonus;
                 break;
             case "urok":
                 _inst.npc_data.traits.sluga = true;
                 _inst.npc_data.traits.follower = true;
                 if (is_undefined(global.followers)) global.followers = 0;
                 global.followers += 1;
-                _npc_debug("!!! NPC " + string(_inst.id) + " NAWROCONY NA KULTYSTE !!!");
-                break;
-            case "szalenstwo":
-                _inst.npc_data.traits.insane = true;
-                if (is_undefined(global.madness_pool)) global.madness_pool = 0;
-                global.madness_pool += 1;
                 break;
         }
     }
-
-    var time_min = room_speed * 10;
-    var time_max = room_speed * 30;
-    if (variable_struct_exists(ed, "czas_interakcji_min")) time_min = ed.czas_interakcji_min;
-    if (variable_struct_exists(ed, "czas_interakcji_max")) time_max = ed.czas_interakcji_max;
-    
-    var time = irandom_range(time_min, time_max);
-    time *= global.npc_mod.czas_interakcji_mult;
-
-    _inst.npc_data.state = "at_encounter";
-    _inst.npc_data.idle_timer = time;
-    scr_npc_cleanup_path(_inst);
 }
 
 function scr_npc_return_home(_inst)

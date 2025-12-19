@@ -1,9 +1,9 @@
 {
   "$GMScript":"v1",
-  "%Name":"nineSlice",
+  "%Name":"scr_trait_system_catalog",
   "isCompatibility":false,
   "isDnD":false,
-  "name":"nineSlice",
+  "name":"scr_trait_system_catalog",
   "parent":{
     "name":"OgolneObjektGry",
     "path":"folders/OgolneObjektGry.yy",

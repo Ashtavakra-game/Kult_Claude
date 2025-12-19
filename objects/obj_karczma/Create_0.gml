@@ -1,13 +1,39 @@
+/// CREATE EVENT - obj_tavern (ROZSZERZONA WERSJA)
+/*
+scr_tavern_register(self);
+
+nav_offset_x = 0;
+nav_offset_y = 65;
+
+// === NOWE: Dane cech dla karczmy ===
+settlement_data = {
+    trait_slots: 3,              // karczmy mają 3 sloty
+    traits: ds_list_create(),
+    location_type: "karczma",
+    local_faith: 40,             // karczmy mają niższą wiarę
+    accumulated_fear: 0
+};
+
+tavern_data = {
+    nazwa: "Karczma Pod Złotym Łabędziem",
+    pojemnosc: 10,
+};
+
+*/
+
 event_inherited();
 
-// Create event obj_encounter_parent
-
-// Ustaw domyślne wartości TYLKO jeśli nie istnieją
+// Ustaw offsety nawigacyjne
 if (!variable_instance_exists(id, "nav_offset_x")) {
-    nav_offset_x = -65;  // domyślna wartość
+    nav_offset_x = -65;
 }
 if (!variable_instance_exists(id, "nav_offset_y")) {
-    nav_offset_y = 55;  // domyślna wartość
+    nav_offset_y = 55;
 }
 
-// reszta kodu rodzica...set_y = 60;  // 60px poniżej obiektu
+// Opcjonalnie: nadpisz dane karczmy
+if (variable_instance_exists(id, "tavern_data")) {
+    tavern_data.nazwa = "Karczma";
+}
+
+show_debug_message("obj_karczma utworzona: " + string(id));

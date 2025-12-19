@@ -119,8 +119,8 @@
   "maintainGms1Font":false,
   "name":"fnt_menu",
   "parent":{
-    "name":"Oswietlenie",
-    "path":"folders/Oswietlenie.yy",
+    "name":"OgolneObjektGry",
+    "path":"folders/OgolneObjektGry.yy",
   },
   "pointRounding":0,
   "ranges":[

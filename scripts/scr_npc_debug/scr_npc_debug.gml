@@ -347,3 +347,40 @@ function scr_npc_debug_draw_world()
     
     draw_set_alpha(1);
 }
+
+/// scr_debug_encounters()
+/// Wyświetla informacje o wszystkich encounterach w grze
+function scr_debug_encounters() {
+    show_debug_message("=== DEBUG ENCOUNTERS ===");
+    
+    if (!variable_global_exists("encounters") || is_undefined(global.encounters)) {
+        show_debug_message("ERROR: global.encounters nie istnieje!");
+        return;
+    }
+    
+    var count = ds_list_size(global.encounters);
+    show_debug_message("Liczba encounterow: " + string(count));
+    
+    for (var i = 0; i < count; i++) {
+        var enc = global.encounters[| i];
+        
+        if (!instance_exists(enc)) {
+            show_debug_message("  [" + string(i) + "] DESTROYED");
+            continue;
+        }
+        
+        var obj_name = object_get_name(enc.object_index);
+        var has_data = variable_instance_exists(enc, "encounter_data");
+        
+        show_debug_message("  [" + string(i) + "] " + obj_name + 
+            " pos=(" + string(enc.x) + "," + string(enc.y) + ")" +
+            " has_data=" + string(has_data));
+        
+        if (has_data && !is_undefined(enc.encounter_data)) {
+            var ed = enc.encounter_data;
+            show_debug_message("      typ=" + string(ed.typ) + 
+                " sila=" + string(ed.sila) + 
+                " zasieg=" + string(ed.zasieg));
+        }
+    }
+}

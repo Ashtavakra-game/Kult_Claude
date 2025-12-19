@@ -24,24 +24,32 @@ if (!variable_instance_exists(id, "settlement_sprite_occupied")) {
 // =============================================================================
 // DANE OSADY
 // =============================================================================
+/// CREATE EVENT - obj_settlement_parent (ROZSZERZONA WERSJA)
+
+// Podstawowe dane settlement
 settlement_data = {
-    residents: ds_list_create(),
-    max_residents: 4,
-    resources: ds_map_create(),
+    name: "Settlement",
     population: 0,
-    name: "Osada"
+    max_population: 10,
+    max_residents: 10,
+    npc_object: npc_parent,
+    npc_kinds: "mezczyzna",
+    residents: ds_list_create(),
+    resources: ds_map_create(),
+    
+    // === NOWE: SYSTEM CECH ===
+    trait_slots: 2,              // domyślnie 2 sloty na cechy
+    traits: ds_list_create(),    // lista aktywnych cech
+    trait_resistance: 0,         // odporność na nadawanie (0-100)
+    location_type: "chata",      // typ lokacji (do walidacji cech)
+    local_faith: 50,             // lokalna wiara (0-100)
+    accumulated_fear: 0          // akumulowany strach lokalny
 };
 
-// Ustaw początkowy sprite
+// Sprite'y
+settlement_sprite_empty = spr_hut_empty;
+settlement_sprite_occupied = spr_hut_occupied;
 sprite_index = settlement_sprite_empty;
 
-// =============================================================================
-// REJESTRACJA W GLOBALNEJ LIŚCIE
-// =============================================================================
-if (!is_undefined(global.settlements)) {
-    ds_list_add(global.settlements, id);
-}
-
-show_debug_message("Settlement utworzony: " + string(id) + 
-    " sprite_empty=" + sprite_get_name(settlement_sprite_empty) +
-    " sprite_occupied=" + sprite_get_name(settlement_sprite_occupied));
+// Rejestracja w globalnej liście
+ds_list_add(global.settlements, id);

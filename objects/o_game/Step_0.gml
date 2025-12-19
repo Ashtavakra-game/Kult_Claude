@@ -102,3 +102,45 @@ if (keyboard_check_pressed(vk_f12)) {
         }
     }
 }
+
+// === DEBUG: Panel systemu cech (F9) ===
+if (keyboard_check_pressed(vk_f9)) {
+    show_debug_message("=== TRAIT SYSTEM DEBUG ===");
+    show_debug_message("Dark Essence: " + string(global.dark_essence) + "/" + string(global.dark_essence_max));
+    show_debug_message("Global Faith: " + string(global.global_faith));
+    show_debug_message("Can Act (night): " + string(scr_trait_can_act()));
+    
+    // Pokaż cechy wszystkich settlements
+    for (var i = 0; i < ds_list_size(global.settlements); i++) {
+        var s = global.settlements[| i];
+        if (instance_exists(s)) {
+            var traits = scr_trait_settlement_get_all(s);
+            show_debug_message("Settlement " + string(s.id) + " traits: " + string(array_length(traits)));
+            for (var j = 0; j < array_length(traits); j++) {
+                show_debug_message("  - " + traits[j].name + " (lvl " + string(traits[j].level) + ")");
+            }
+        }
+    }
+}
+
+// === DEBUG: Dodaj EC (F7) ===
+if (keyboard_check_pressed(vk_f7)) {
+    scr_dark_essence_add(10);
+    show_debug_message("DEBUG: Added 10 EC. Total: " + string(global.dark_essence));
+}
+
+// === DEBUG: Nadaj cechę pierwszemu settlement (F8) ===
+if (keyboard_check_pressed(vk_f8)) {
+    if (ds_list_size(global.settlements) > 0) {
+        var s = global.settlements[| 0];
+        if (instance_exists(s)) {
+            var success = scr_trait_apply_to_settlement(s, "nawiedzenie");
+            show_debug_message("DEBUG: Apply 'nawiedzenie' to settlement " + string(s.id) + ": " + string(success));
+        }
+    }
+}
+
+// === DEBUG: Sprawdź encountery (F1) ===
+if (keyboard_check_pressed(vk_f1)) {
+    scr_debug_encounters();
+}

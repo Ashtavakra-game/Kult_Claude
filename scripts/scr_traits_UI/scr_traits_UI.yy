@@ -1,0 +1,13 @@
+{
+  "$GMScript":"v1",
+  "%Name":"scr_traits_UI",
+  "isCompatibility":false,
+  "isDnD":false,
+  "name":"scr_traits_UI",
+  "parent":{
+    "name":"OgolneObjektGry",
+    "path":"folders/OgolneObjektGry.yy",
+  },
+  "resourceType":"GMScript",
+  "resourceVersion":"2.0",
+}
