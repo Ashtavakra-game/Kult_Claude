@@ -4,6 +4,11 @@
 window_set_fullscreen(true);
 surface_resize(application_surface, 2560, 1440);
 
+// === INICJALIZACJA ZMIENNYCH GLOBALNYCH UI (NAJPIERW!) ===
+if (!variable_global_exists("ui_blocking_input")) {
+    global.ui_blocking_input = false;
+}
+
 //----------------------
 player = noone;
 

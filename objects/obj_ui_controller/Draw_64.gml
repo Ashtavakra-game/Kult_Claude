@@ -20,10 +20,8 @@ if (ui_active_panel == "encounter" && instance_exists(ui_selected_target)) {
     _draw_encounter_panel(ui_selected_target);
 }
 
-// === PASEK ESENCJI CIEMNOŚCI ===
-if (variable_global_exists("dark_essence")) {
-    scr_ui_draw_dark_essence_bar(10, 10, 150, 24);
-}
+// === PASKI EKONOMII (WSM + EC) ===
+scr_ui_draw_economy_bars(10, 10, 180, 52);
 
 /// Funkcja rysująca panel encountera (POPRAWIONA)
 function _draw_encounter_panel(_enc) {

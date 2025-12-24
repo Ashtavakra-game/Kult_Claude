@@ -96,6 +96,7 @@ function scr_trait_calculate_effects(_def, _level) {
 
 /// scr_trait_apply_to_settlement(settlement_inst, trait_name)
 /// Nadaje cechę lokacji. Zwraca true jeśli sukces.
+
 function scr_trait_apply_to_settlement(_settlement, _trait_name) {
     
     // === WALIDACJA ===
@@ -162,22 +163,22 @@ function scr_trait_apply_to_settlement(_settlement, _trait_name) {
         return false;
     }
     
-    // === OBLICZ KOSZT ===
+    // === OBLICZ KOSZT (w WSM - Wiara w Stare Mity) ===
     var cost = scr_trait_get_cost(_trait_name, def.base_cost);
-    
+
     // Modyfikator kosztu od lokacji (np. Zapomniane Miejsce)
     cost = scr_trait_apply_cost_modifiers(_settlement, cost);
-    
-    // Sprawdź czy stać
-    if (!scr_dark_essence_can_afford(cost)) {
-        show_debug_message("TRAIT: Not enough Dark Essence! Need " + string(cost) + ", have " + string(global.dark_essence));
+
+    // Sprawdź czy stać (używamy WSM dla traits)
+    if (!scr_myth_faith_can_afford(cost)) {
+        show_debug_message("TRAIT: Not enough Myth Faith! Need " + string(cost) + " WSM, have " + string(global.myth_faith));
         return false;
     }
-    
+
     // === ZASTOSUJ CECHĘ ===
-    
-    // Wydaj EC
-    scr_dark_essence_spend(cost);
+
+    // Wydaj WSM
+    scr_myth_faith_spend(cost);
     
     // Utwórz instancję cechy
     var trait_inst = scr_trait_create_instance(_trait_name, 1);
@@ -191,11 +192,86 @@ function scr_trait_apply_to_settlement(_settlement, _trait_name) {
     // Natychmiastowa aktualizacja modyfikatorów NPC
     scr_trait_update_settlement_residents(_settlement);
     
-    show_debug_message("TRAIT: Applied '" + _trait_name + "' to settlement " + string(_settlement.id) + " for " + string(cost) + " EC");
+    show_debug_message("TRAIT: Applied '" + _trait_name + "' to settlement " + string(_settlement.id) + " for " + string(cost) + " WSM");
+
+    return true;
+}
+/// scr_trait_apply_to_settlement_v2(settlement_inst, trait_name)
+/// Nowa wersja używająca Wiary w Stare Mity
+function scr_trait_apply_to_settlement_v2(_settlement, _trait_name) {
+    if (!scr_trait_can_act()) return false;
+    if (!instance_exists(_settlement)) return false;
+    
+    var sd = _settlement.settlement_data;
+    
+    // Sprawdź sloty
+    var max_slots = variable_struct_exists(sd, "trait_slots") ? sd.trait_slots : 2;
+    if (is_undefined(sd.traits)) {
+        sd.traits = ds_list_create();
+    }
+    
+    if (ds_list_size(sd.traits) >= max_slots) {
+        show_debug_message("TRAIT: No free slots!");
+        return false;
+    }
+    
+    // Sprawdź czy cecha już istnieje
+    for (var i = 0; i < ds_list_size(sd.traits); i++) {
+        var existing = sd.traits[| i];
+        if (existing.name == _trait_name) {
+            show_debug_message("TRAIT: Settlement already has this trait!");
+            return false;
+        }
+    }
+    
+    // Pobierz definicję
+    var def = scr_trait_get_definition(_trait_name);
+    if (is_undefined(def)) {
+        show_debug_message("TRAIT: Unknown trait '" + _trait_name + "'!");
+        return false;
+    }
+    
+    // Sprawdź czy cecha jest dynamiczna
+    if (def.type != "dynamic" || def.base_cost < 0) {
+        show_debug_message("TRAIT: Trait '" + _trait_name + "' cannot be applied!");
+        return false;
+    }
+    
+    // Sprawdź wymagania wstępne
+    if (!scr_trait_check_prerequisite(_trait_name, _settlement)) {
+        show_debug_message("TRAIT: Prerequisites not met!");
+        return false;
+    }
+    
+    // === OBLICZ KOSZT W WSM ===
+    var cost = scr_trait_get_cost(_trait_name, def.base_cost);
+    cost = scr_trait_apply_cost_modifiers(_settlement, cost);
+    
+    // === SPRAWDŹ CZY STAĆ (WSM) ===
+    if (!scr_myth_faith_can_afford(cost)) {
+        show_debug_message("TRAIT: Not enough Myth Faith! Need " + string(cost) + " WSM, have " + string(global.myth_faith));
+        return false;
+    }
+    
+    // === WYDAJ WSM ===
+    scr_myth_faith_spend(cost);
+    
+    // Utwórz instancję cechy
+    var trait_inst = scr_trait_create_instance(_trait_name, 1);
+    
+    // Dodaj do lokacji
+    ds_list_add(sd.traits, trait_inst);
+    
+    // Zaktualizuj globalny licznik
+    scr_trait_increment_usage(_trait_name);
+    
+    // Aktualizuj NPC
+    scr_trait_update_settlement_residents(_settlement);
+    
+    show_debug_message("TRAIT: Applied '" + _trait_name + "' for " + string(cost) + " WSM");
     
     return true;
 }
-
 /// scr_trait_apply_cost_modifiers(settlement_inst, base_cost)
 /// Modyfikuje koszt na podstawie cech lokacji
 function scr_trait_apply_cost_modifiers(_settlement, _base_cost) {
@@ -245,13 +321,14 @@ function scr_trait_remove_from_settlement(_settlement, _trait_name) {
 
 /// scr_trait_escalate(settlement_inst, trait_name)
 /// Próbuje eskalować cechę do wyższego poziomu
+/// DUALNA EKONOMIA: EC wymagane tylko dla eskalacji do poziomu III+
 function scr_trait_escalate(_settlement, _trait_name) {
     if (!scr_trait_can_act()) return false;
     if (!instance_exists(_settlement)) return false;
-    
+
     var sd = _settlement.settlement_data;
     if (is_undefined(sd.traits)) return false;
-    
+
     // Znajdź cechę
     var trait = undefined;
     for (var i = 0; i < ds_list_size(sd.traits); i++) {
@@ -260,34 +337,47 @@ function scr_trait_escalate(_settlement, _trait_name) {
             break;
         }
     }
-    
+
     if (is_undefined(trait)) return false;
-    
+
     // Sprawdź czy można eskalować
     if (trait.level >= 4) {
         show_debug_message("TRAIT: Already at max level!");
         return false;
     }
-    
+
     var cfg = global.trait_config;
+    var eco_cfg = global.economy_config;
     var next_level = trait.level; // indeks 0-2 dla poziomów 1-3
-    
+
     // Sprawdź wymagane noce aktywności
     var required_nights = cfg.escalation_nights[next_level - 1];
     if (trait.active_nights < required_nights) {
         show_debug_message("TRAIT: Need " + string(required_nights) + " active nights, have " + string(trait.active_nights));
         return false;
     }
-    
-    // Sprawdź koszt EC
-    var ec_cost = cfg.escalation_costs[next_level - 1];
-    if (!scr_dark_essence_can_afford(ec_cost)) {
-        show_debug_message("TRAIT: Not enough EC for escalation! Need " + string(ec_cost));
-        return false;
+
+    // === DUALNA EKONOMIA: EC tylko dla poziomów III+ ===
+    var ec_cost = 0;
+    if (trait.level >= 2) {
+        // Eskalacja II→III lub III→IV wymaga EC
+        if (trait.level == 2) {
+            ec_cost = eco_cfg.escalation_level3_ec; // 15 EC
+        } else if (trait.level == 3) {
+            ec_cost = eco_cfg.escalation_level4_ec; // 30 EC
+        }
+
+        if (!scr_dark_essence_can_afford(ec_cost)) {
+            show_debug_message("TRAIT: Not enough EC for escalation to level " + string(trait.level + 1) + "! Need " + string(ec_cost));
+            return false;
+        }
     }
-    
+
     // === ESKALUJ ===
-    scr_dark_essence_spend(ec_cost);
+    if (ec_cost > 0) {
+        scr_dark_essence_spend(ec_cost);
+        show_debug_message("TRAIT: Spent " + string(ec_cost) + " EC for escalation");
+    }
     trait.level += 1;
     trait.active_nights = 0; // reset licznika
     

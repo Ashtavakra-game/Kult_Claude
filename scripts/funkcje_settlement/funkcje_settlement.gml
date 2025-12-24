@@ -140,11 +140,13 @@ function scr_settlement_remove_resident()
 {
     var _inst = argument0;
     var _npc = argument1;
-    
+
     if (!instance_exists(_inst)) return;
     if (is_undefined(_inst.settlement_data)) return;
     if (is_undefined(_inst.settlement_data.residents)) return;
-    
+    // Sprawdź czy ds_list jeszcze istnieje (może być zniszczona przy cleanup)
+    if (!ds_exists(_inst.settlement_data.residents, ds_type_list)) return;
+
     var idx = ds_list_find_index(_inst.settlement_data.residents, _npc);
     if (idx >= 0) {
         ds_list_delete(_inst.settlement_data.residents, idx);

@@ -24,9 +24,9 @@ camera_set_view_pos(cam, cam_x, cam_y);
 if (keyboard_check_pressed(vk_f11)) {
     window_set_fullscreen(!window_get_fullscreen());
 }
-
+// === Kończenie gry ===
 if (keyboard_check_pressed(vk_escape)) {
-   game_end();
+   //game_end();
 }
 
 // === DEBUG: NPC PRESETS (F1-F5) ===

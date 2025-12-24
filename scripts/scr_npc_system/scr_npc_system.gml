@@ -125,13 +125,20 @@ function _npc_get_phase_progress()
 // NPC CREATE
 // =============================================================================
 
-function scr_npc_create()
+function scr_npc_create(_inst, _kind, _home)
 {
-    var _inst = argument0;
-    var _kind = argument1;
-    var _home = argument2;
     _ensure_global_lists();
-	
+
+    // Zapobiegaj duplikatom - jeśli NPC już jest w liście, tylko zaktualizuj dane
+    var existing_idx = ds_list_find_index(global.npcs, _inst);
+    if (existing_idx != -1) {
+        // NPC już istnieje - zaktualizuj home i kind jeśli podane
+        if (!is_undefined(_inst.npc_data)) {
+            if (_home != noone) _inst.npc_data.home = _home;
+            if (_kind != "") _inst.npc_data.kind = _kind;
+        }
+        return _inst.npc_data;
+    }
 
     var traits = {
         pracowitosc: irandom_range(20, 80),
@@ -235,30 +242,6 @@ function scr_npc_create()
 // TRAIT GETTERS
 // =============================================================================
 
-function scr_npc_get_effective(_inst, _trait)
-{
-    if (!instance_exists(_inst)) return 0;
-    if (is_undefined(_inst.npc_data)) return 0;
-    
-    var base = 0;
-    var ind_mod = 0;
-    var glob_mod = 0;
-    
-    if (variable_struct_exists(_inst.npc_data.traits, _trait)) {
-        base = variable_struct_get(_inst.npc_data.traits, _trait);
-    }
-    
-    if (variable_struct_exists(_inst.npc_data.modifiers, _trait)) {
-        ind_mod = variable_struct_get(_inst.npc_data.modifiers, _trait);
-    }
-    
-    if (!is_undefined(global.npc_mod) && variable_struct_exists(global.npc_mod, _trait)) {
-        glob_mod = variable_struct_get(global.npc_mod, _trait);
-    }
-    
-    return clamp(base + ind_mod + glob_mod, 0, 100);
-}
-
 function scr_npc_trait(_inst, _trait) {
     if (!instance_exists(_inst)) return 0;
     if (is_undefined(_inst.npc_data)) return 0;
@@ -294,9 +277,8 @@ function scr_npc_trait(_inst, _trait) {
 // PATH MANAGEMENT
 // =============================================================================
 
-function scr_npc_cleanup_path()
+function scr_npc_cleanup_path(_inst)
 {
-    var _inst = argument0;
     if (is_undefined(_inst.npc_data)) return;
     
     var pid = _inst.npc_data.path_id;
@@ -791,16 +773,8 @@ function scr_npc_decide_idle_action(_inst)
         if (nd.staying_late && nd.state == "at_tavern") {
             return "stay_tavern";
         }
-        
-        // W nocy zawsze wracaj do domu
-        // Ale może odwiedzić encounter po drodze (normalna szansa)
-        if (traits.sluga) {
-            var devotion = scr_npc_trait(_inst, "devotion");
-            if (irandom(100) < devotion * 0.5) { // Mniejsza szansa w nocy
-                return "seek_encounter";
-            }
-        }
-        
+
+        // W nocy NPC wracają do domu i zostają tam
         return "return_home";
     }
     
@@ -1059,27 +1033,41 @@ function scr_npc_finish_work(_inst) {
     }
     
     _inst.npc_data.work_done_today = true;
-    
-    var phase = _npc_get_phase();
-    if (phase == "evening" || phase == "night") {
-        _inst.npc_data.state = "idle";
-    } else {
-        _inst.npc_data.state = "idle";
-    }
+    _inst.npc_data.state = "idle";
 }
 function scr_npc_handle_encounter(_inst, _enc) {
-    if (!instance_exists(_enc)) return;
-    
+    if (!instance_exists(_enc)) {
+        show_debug_message("ENCOUNTER ERROR: encounter nie istnieje!");
+        return;
+    }
+
     var ed = _enc.encounter_data;
-    if (is_undefined(ed)) return;
-    
+    if (is_undefined(ed)) {
+        show_debug_message("ENCOUNTER ERROR: encounter_data jest undefined!");
+        return;
+    }
+
+    // === JEDNORAZOWY BONUS WSM ZA ODWIEDZINY (raz na dzień per NPC) ===
+    if (!_inst.npc_data.visited_encounter) {
+        if (variable_global_exists("economy_config") && !is_undefined(global.economy_config)) {
+            var wsm_bonus = global.economy_config.wsm_per_encounter_visit;
+            var wsm_before = global.myth_faith;
+            scr_myth_faith_add(wsm_bonus);
+            show_debug_message("ECONOMY: NPC " + string(_inst.id) + " visited encounter, +" + string(wsm_bonus) + " WSM (was: " + string(wsm_before) + ", now: " + string(global.myth_faith) + ")");
+        } else {
+            show_debug_message("ENCOUNTER ERROR: economy_config nie istnieje lub jest undefined!");
+        }
+    } else {
+        show_debug_message("ENCOUNTER: NPC " + string(_inst.id) + " already visited encounter today");
+    }
+
     _inst.npc_data.visited_encounter = true;
     _inst.npc_data.traits.czas_bez_encountera = 0;
-    
-    // === NOWE: Znajdź najbliższy settlement i zastosuj modyfikatory ===
+
+    // === Znajdź najbliższy settlement i zastosuj modyfikatory ===
     var nearest_settlement = noone;
     var min_dist = infinity;
-    
+
     for (var i = 0; i < ds_list_size(global.settlements); i++) {
         var s = global.settlements[| i];
         if (instance_exists(s)) {
@@ -1120,6 +1108,7 @@ function scr_npc_handle_encounter(_inst, _enc) {
                 break;
         }
     }
+	
 }
 
 function scr_npc_return_home(_inst)
@@ -1271,68 +1260,6 @@ function scr_npc_leave_tavern(_inst)
 // =============================================================================
 // ANIMACJE
 // =============================================================================
-/*
-function scr_npc_update_sprite(_inst)
-{
-    if (is_undefined(_inst.npc_data)) return;
-    
-    var nd = _inst.npc_data;
-    
-    var dx = _inst.x - nd.last_x;
-    var dy = _inst.y - nd.last_y;
-    var move_dist = point_distance(0, 0, dx, dy);
-    
-    var is_moving = (move_dist > 0.01);
-    
-    if (!is_moving && nd.path_started && nd.path_id != -1) {
-        with (_inst) {
-            if (path_index != -1 && path_position < 0.99) {
-                is_moving = true;
-            }
-        }
-    }
-    
-    if (abs(dx) > 0.01) {
-        _inst.image_xscale = (dx < 0) ? -1 : 1;
-    }
-    
-    var target_sprite = noone;
-    
-    switch (nd.state) {
-        // === NIEWIDOCZNY - w budynku ===
-        case "resting":
-        case "at_tavern":
-        case "sleeping":
-            target_sprite = spr_npc_invisible;
-            break;
-        
-        // === PRACA ===
-        case "working":
-            target_sprite = (nd.sprite_work != noone) ? nd.sprite_work : nd.sprite_idle;
-            break;
-        
-        // === IDLE ===
-        case "idle":
-        case "idle_wait":
-        case "at_encounter":
-        case "at_explore_point":
-            target_sprite = nd.sprite_idle;
-            break;
-        
-        // === DOMYŚLNIE - ruch lub idle ===
-        default:
-            target_sprite = is_moving ? nd.sprite_walk : nd.sprite_idle;
-            break;
-    }
-    
-    if (target_sprite != noone && _inst.sprite_index != target_sprite) {
-        _inst.sprite_index = target_sprite;
-    }
-    
-    nd.last_x = _inst.x;
-    nd.last_y = _inst.y;
-}
-*/
 
 function scr_npc_update_sprite(_inst)
 {
@@ -1393,13 +1320,8 @@ function scr_npc_update_sprite(_inst)
     nd.last_y = _inst.y;
 }
 
-function scr_npc_set_sprites()
+function scr_npc_set_sprites(_inst, _idle, _walk, _work, _invis = noone)
 {
-    var _inst = argument0;
-    var _idle = argument1;
-    var _walk = argument2;
-    var _work = argument3;
-    var _invis = argument_count > 4 ? argument4 : noone;
     
     if (is_undefined(_inst.npc_data)) {
         show_debug_message("  ERROR: npc_data is undefined!");
@@ -1451,9 +1373,8 @@ function scr_npc_check_phase_change(_inst)
 // MAIN STEP
 // =============================================================================
 
-function scr_npc_step()
+function scr_npc_step(_inst)
 {
-    var _inst = argument0;
     if (is_undefined(_inst.npc_data)) return;
 
     var nd = _inst.npc_data;
@@ -1506,6 +1427,13 @@ function scr_npc_step()
 
     if (st == "resting") {
         if (nd.rest_timer <= 0) {
+            var phase = _npc_get_phase();
+            // W nocy zostań w domu - przedłuż odpoczynek
+            if (phase == "night") {
+                nd.rest_timer = room_speed * 5; // Przedłuż o 5 sekund
+                return;
+            }
+            // W innych porach dnia - wstań
             nd.state = "idle";
             nd.visited_encounter = false;
         }
@@ -1551,6 +1479,12 @@ function scr_npc_step()
             return;
         } else if (tt == "encounter") {
             scr_npc_handle_encounter(_inst, nd.target);
+            scr_npc_cleanup_path(_inst);
+            nd.state = "at_encounter";
+            nd.idle_timer = irandom_range(room_speed * 2, room_speed * 5);
+            nd.target = noone;
+            nd.target_point = noone;
+            nd.target_type = "";
             return;
         } else if (tt == "tavern") {
             scr_npc_arrive_tavern(_inst);
@@ -1911,21 +1845,6 @@ function scr_draw_navgrid()
     show_debug_message("Navgrid: blocked cells visible = " + string(blocked_count));
 }
 
-
-
-/// Usuwa NPC z osady
-
-/*function scr_settlement_remove_resident(_settlement, _npc) {
-    if (!instance_exists(_settlement)) return;
-    if (is_undefined(_settlement.settlement_data)) return;
-    
-    var idx = ds_list_find_index(_settlement.settlement_data.residents, _npc);
-    if (idx >= 0) {
-        ds_list_delete(_settlement.settlement_data.residents, idx);
-        _npc_debug("Usunięto mieszkańca z osady: " + string(_npc.id));
-    }
-}
-*/
 /// Zwraca liczbę mieszkańców
 function scr_settlement_get_resident_count(_settlement) {
     if (!instance_exists(_settlement)) return 0;

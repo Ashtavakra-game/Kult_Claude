@@ -3,6 +3,7 @@
     {"name":"Czas","order":33,"path":"folders/Czas.yy",},
     {"name":"Fog","order":44,"path":"folders/Fog.yy",},
     {"name":"Grafika","order":7,"path":"folders/Grafika.yy",},
+    {"name":"Katalog Cech","order":47,"path":"folders/Katalog Cech.yy",},
     {"name":"NPC","order":38,"path":"folders/NPC.yy",},
     {"name":"Obiekty interaktywne","order":36,"path":"folders/Obiekty interaktywne.yy",},
     {"name":"Objekty kolizji","order":35,"path":"folders/Objekty kolizji.yy",},

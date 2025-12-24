@@ -37,7 +37,6 @@ function scr_npc_config_init()
         
         // CZAS (mnożniki, 1.0 = normalny)
         czas_pracy_mult: 1.0,
-        czas_interakcji_mult: 1.0,
         czas_odpoczynku_mult: 1.0,
         czas_eksploracji_mult: 1.0,
         
@@ -177,7 +176,6 @@ function scr_npc_reset_global_mods()
     global.npc_mod.fanatyzm = 0;
     global.npc_mod.towarzyskosc = 0;
     global.npc_mod.czas_pracy_mult = 1.0;
-    global.npc_mod.czas_interakcji_mult = 1.0;
     global.npc_mod.czas_odpoczynku_mult = 1.0;
     global.npc_mod.czas_eksploracji_mult = 1.0;
     global.npc_mod.szansa_wyjscia_noc = 0;
@@ -199,14 +197,14 @@ function scr_npc_debug_print(_inst)
     show_debug_message("Daily Plan: " + nd.daily_plan);
     show_debug_message("Sluga: " + string(t.sluga));
     show_debug_message("--- TRAITS (effective) ---");
-    show_debug_message("  pracowitosc: " + string(scr_npc_get_effective(_inst, "pracowitosc")));
-    show_debug_message("  wanderlust: " + string(scr_npc_get_effective(_inst, "wanderlust")));
-    show_debug_message("  roztargnienie: " + string(scr_npc_get_effective(_inst, "roztargnienie")));
-    show_debug_message("  ciekawosc: " + string(scr_npc_get_effective(_inst, "ciekawosc")));
-    show_debug_message("  podatnosc: " + string(scr_npc_get_effective(_inst, "podatnosc")));
-    show_debug_message("  devotion: " + string(scr_npc_get_effective(_inst, "devotion")));
-    show_debug_message("  fanatyzm: " + string(scr_npc_get_effective(_inst, "fanatyzm")));
-    show_debug_message("  towarzyskosc: " + string(scr_npc_get_effective(_inst, "towarzyskosc")));
+    show_debug_message("  pracowitosc: " + string(scr_npc_trait(_inst, "pracowitosc")));
+    show_debug_message("  wanderlust: " + string(scr_npc_trait(_inst, "wanderlust")));
+    show_debug_message("  roztargnienie: " + string(scr_npc_trait(_inst, "roztargnienie")));
+    show_debug_message("  ciekawosc: " + string(scr_npc_trait(_inst, "ciekawosc")));
+    show_debug_message("  podatnosc: " + string(scr_npc_trait(_inst, "podatnosc")));
+    show_debug_message("  devotion: " + string(scr_npc_trait(_inst, "devotion")));
+    show_debug_message("  fanatyzm: " + string(scr_npc_trait(_inst, "fanatyzm")));
+    show_debug_message("  towarzyskosc: " + string(scr_npc_trait(_inst, "towarzyskosc")));
     show_debug_message("--- DAILY FLAGS ---");
     show_debug_message("  plan_decided: " + string(nd.plan_decided));
     show_debug_message("  work_done_today: " + string(nd.work_done_today));

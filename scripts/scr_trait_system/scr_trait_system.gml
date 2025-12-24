@@ -49,10 +49,39 @@ function scr_trait_safe_get_residents(_settlement) {
 /// Inicjalizuje globalny system cech lokacji i Esencji Ciemności
 function scr_trait_system_init() {
     
-    // === ESENCJA CIEMNOŚCI (główna waluta gracza) ===
-    global.dark_essence = 0;           // aktualna ilość EC
-    global.dark_essence_max = 100;     // limit puli
-    global.dark_essence_income = 0;    // dochód na noc (obliczany dynamicznie)
+
+    // === WIARA W STARE MITY (główna waluta) ===
+    global.myth_faith = 0;              // aktualna ilość
+    global.myth_faith_max = 200;        // limit puli
+    global.myth_faith_income = 0;       // dochód na dzień (obliczany dynamicznie)
+    
+    // === ESENCJA CIEMNOŚCI (waluta zaawansowana) ===
+    // (już istnieje, ale zmień opis)
+    global.dark_essence = 0;            // aktualna ilość
+    global.dark_essence_max = 100;      // limit puli
+    global.dark_essence_income = 0;     // dochód na noc
+    
+    // === KONFIGURACJA EKONOMII ===
+    global.economy_config = {
+        // Generowanie WSM
+        wsm_per_population: 1.0,        // WSM na NPC na dzień
+        wsm_per_encounter_visit: 0.5,   // WSM za odwiedziny encountera (raz na dzień per NPC)
+        wsm_from_staying_late: 1,       // bonus za NPC zostającego w karczmie
+        
+        // Koszty w WSM
+        trait_cost_currency: "wsm",     // waluta dla traits
+        cyrograf_cost_currency: "wsm",  // waluta dla cyrografów
+        cyrograf_base_cost_wsm: 8,      // koszt próby cyrografu w WSM
+        
+        // Koszty w EC (zaawansowane)
+        escalation_level3_ec: 15,       // EC za eskalację do poziomu III
+        escalation_level4_ec: 30,       // EC za eskalację do poziomu IV
+        
+        // Generowanie EC
+        ec_per_cyrograf_success: 10,    // EC za udany cyrograf
+        ec_per_slave_night: 2,          // EC za sługę na noc
+        ec_per_sin: 5,                  // EC za grzech NPC
+    };
     
     // === ŚLEDZENIE UŻYCIA CECH ===
     // Klucz: nazwa_cechy, Wartość: ile lokacji ma tę cechę
@@ -82,6 +111,8 @@ function scr_trait_system_init() {
         escalation_costs: [0, 10, 25], // dodatkowy koszt EC
     };
     
+	
+	
     // === FLAGI SYSTEMOWE ===
     global.trait_system_active = true;
     
@@ -122,6 +153,42 @@ function scr_dark_essence_get() {
     return global.dark_essence;
 }
 
+/// scr_myth_faith_add(amount)
+/// Dodaje Wiarę w Stare Mity (z limitem max)
+function scr_myth_faith_add(_amount) {
+    if (!variable_global_exists("myth_faith")) {
+        global.myth_faith = 0;
+        global.myth_faith_max = 200;
+    }
+    global.myth_faith = min(global.myth_faith + _amount, global.myth_faith_max);
+    return global.myth_faith;
+}
+
+/// scr_myth_faith_spend(amount)
+/// Wydaje Wiarę w Stare Mity. Zwraca true jeśli sukces.
+function scr_myth_faith_spend(_amount) {
+    if (!variable_global_exists("myth_faith")) return false;
+    if (global.myth_faith >= _amount) {
+        global.myth_faith -= _amount;
+        return true;
+    }
+    return false;
+}
+
+/// scr_myth_faith_can_afford(amount)
+/// Sprawdza czy gracza stać na wydatek w WSM
+function scr_myth_faith_can_afford(_amount) {
+    if (!variable_global_exists("myth_faith")) return false;
+    return (global.myth_faith >= _amount);
+}
+
+/// scr_myth_faith_get()
+/// Zwraca aktualną ilość WSM
+function scr_myth_faith_get() {
+    if (!variable_global_exists("myth_faith")) return 0;
+    return global.myth_faith;
+}
+
 // =============================================================================
 // KOSZTY CECH - SKALA GEOMETRYCZNA
 // =============================================================================
@@ -153,6 +220,10 @@ function scr_trait_increment_usage(_trait_name) {
 /// scr_trait_decrement_usage(trait_name)
 /// Zmniejsza licznik użycia cechy (wywoływane gdy cecha zanika)
 function scr_trait_decrement_usage(_trait_name) {
+    // Sprawdź czy system jeszcze istnieje (może być już zniszczony przy cleanup)
+    if (!variable_global_exists("trait_usage")) return;
+    if (!ds_exists(global.trait_usage, ds_type_map)) return;
+
     if (ds_map_exists(global.trait_usage, _trait_name)) {
         var usage = ds_map_find_value(global.trait_usage, _trait_name);
         if (usage > 0) {
@@ -210,11 +281,110 @@ function scr_trait_is_night() {
     return false;
 }
 
+/// scr_trait_is_evening()
+/// Zwraca true jeśli jest wieczór
+function scr_trait_is_evening() {
+    if (variable_global_exists("daynight_phase")) {
+        return (global.daynight_phase == "evening");
+    }
+    return false;
+}
+
+/// scr_trait_is_night_or_evening()
+/// Zwraca true jeśli jest noc lub wieczór (czas na cyrografy)
+function scr_trait_is_night_or_evening() {
+    return scr_trait_is_night() || scr_trait_is_evening();
+}
+
 /// scr_trait_can_act()
 /// Sprawdza czy gracz może wykonywać akcje (noc + system aktywny)
 function scr_trait_can_act() {
     if (!global.trait_system_active) return false;
     return scr_trait_is_night();
+}
+
+function scr_economy_day_tick() {
+    if (!variable_global_exists("myth_faith")) return;
+    
+    var cfg = global.economy_config;
+    global.myth_faith_income = 0;
+    
+    // === BAZOWE GENEROWANIE: POPULACJA ===
+    var population = scr_economy_get_total_population();
+    var base_wsm = population * cfg.wsm_per_population;
+    global.myth_faith_income += base_wsm;
+    
+    // === BONUS OD TRAITS ===
+    var trait_bonus = scr_economy_get_trait_wsm_bonus();
+    global.myth_faith_income += trait_bonus;
+    
+    // Dodaj wygenerowane WSM
+    scr_myth_faith_add(global.myth_faith_income);
+    
+    show_debug_message("=== ECONOMY DAY TICK ===");
+    show_debug_message("Population: " + string(population));
+    show_debug_message("Base WSM: " + string(base_wsm));
+    show_debug_message("Trait bonus: " + string(trait_bonus));
+    show_debug_message("Total WSM income: " + string(global.myth_faith_income));
+    show_debug_message("Current WSM: " + string(global.myth_faith));
+}
+
+/// scr_economy_get_total_population()
+/// Zwraca całkowitą populację NPC
+function scr_economy_get_total_population() {
+    if (!variable_global_exists("npcs") || is_undefined(global.npcs)) return 0;
+
+    var count = 0;
+    var n = ds_list_size(global.npcs);
+
+    for (var i = 0; i < n; i++) {
+        var npc = global.npcs[| i];
+        if (instance_exists(npc) && !is_undefined(npc.npc_data)) {
+            count++;
+        }
+    }
+
+    return count;
+}
+
+/// scr_economy_get_trait_wsm_bonus()
+/// Zwraca bonus WSM z aktywnych cech lokacji
+function scr_economy_get_trait_wsm_bonus() {
+    var bonus = 0;
+
+    if (!variable_global_exists("settlements") || is_undefined(global.settlements)) return bonus;
+
+    for (var i = 0; i < ds_list_size(global.settlements); i++) {
+        var settlement = global.settlements[| i];
+        if (!instance_exists(settlement)) continue;
+
+        var traits_list = scr_trait_safe_get_traits(settlement);
+        if (is_undefined(traits_list)) continue;
+
+        for (var j = 0; j < ds_list_size(traits_list); j++) {
+            var trait = traits_list[| j];
+            // Każda aktywna cecha daje bonus WSM bazowany na poziomie
+            bonus += trait.level * 0.5;
+
+            // Bonus za cechy "straszne" (generujące strach)
+            if (variable_struct_exists(trait.effects, "local_fear_bonus")) {
+                bonus += trait.effects.local_fear_bonus * 0.1;
+            }
+        }
+    }
+
+    return bonus;
+}
+
+/// scr_economy_on_encounter_visit(encounter_inst)
+/// Dodaje WSM za odwiedziny encountera przez NPC
+function scr_economy_on_encounter_visit(_encounter) {
+    if (!variable_global_exists("myth_faith")) return;
+
+    var cfg = global.economy_config;
+    scr_myth_faith_add(cfg.wsm_per_encounter_visit);
+
+    show_debug_message("ECONOMY: +" + string(cfg.wsm_per_encounter_visit) + " WSM from encounter visit");
 }
 
 // =============================================================================

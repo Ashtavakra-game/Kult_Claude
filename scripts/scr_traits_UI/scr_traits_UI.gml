@@ -31,7 +31,20 @@
 function scr_ui_draw_location_panel(_settlement, _x, _y) {
     if (!instance_exists(_settlement)) return;
     if (is_undefined(_settlement.settlement_data)) return;
+//-- dodane po poprawkach do ui	
+	    if (!instance_exists(obj_ui_controller)) {
+        show_debug_message("UI ERROR: obj_ui_controller not found in scr_ui_open_location_panel!");
+        return;
+    }
     
+    with (obj_ui_controller) {
+        ui_active_panel = "location";
+        ui_selected_target = _settlement;
+        global.ui_blocking_input = true;
+    }
+    show_debug_message("UI: Opened location panel for " + string(_settlement.id));
+//--   
+
     var sd = _settlement.settlement_data;
     var w = TRAIT_UI_PANEL_WIDTH;
     var h = TRAIT_UI_PANEL_HEIGHT;
@@ -439,6 +452,70 @@ function scr_ui_draw_dark_essence_bar(_x, _y, _w, _h) {
     draw_set_halign(fa_right);
     draw_set_color($ff3399);
     draw_text(_x - 4, _y + _h/2, "EC");
+    
+    draw_set_halign(fa_left);
+    draw_set_valign(fa_top);
+    draw_set_color(c_white);
+}
+
+/// scr_ui_draw_economy_bars(x, y, width, height)
+/// Rysuje paski obu walut
+function scr_ui_draw_economy_bars(_x, _y, _w, _h) {
+    var spacing = 4;
+    var bar_h = (_h - spacing) / 2;
+    
+    // === PASEK WIARY W STARE MITY (WSM) ===
+    var wsm = variable_global_exists("myth_faith") ? global.myth_faith : 0;
+    var wsm_max = variable_global_exists("myth_faith_max") ? global.myth_faith_max : 200;
+    var wsm_fill = wsm / wsm_max;
+    
+    // Tło
+    draw_set_alpha(0.7);
+    draw_rectangle_color(_x, _y, _x + _w, _y + bar_h, 
+        $1a1a2e, $1a1a2e, $1a1a2e, $1a1a2e, false);
+    
+    // Wypełnienie (niebieski/fioletowy)
+    draw_set_alpha(0.9);
+    var wsm_color = merge_color($333399, $9966ff, wsm_fill);
+    draw_rectangle_color(_x + 2, _y + 2, _x + 2 + (_w - 4) * wsm_fill, _y + bar_h - 2,
+        wsm_color, wsm_color, wsm_color, wsm_color, false);
+    
+    // Ramka
+    draw_set_alpha(1);
+    draw_rectangle_color(_x, _y, _x + _w, _y + bar_h,
+        $6666cc, $6666cc, $6666cc, $6666cc, true);
+    
+    // Tekst
+    draw_set_color($ffffff);
+    draw_set_halign(fa_center);
+    draw_set_valign(fa_middle);
+    draw_text(_x + _w/2, _y + bar_h/2, string(floor(wsm)) + "/" + string(wsm_max) + " WSM");
+    
+    // === PASEK ESENCJI CIEMNOŚCI (EC) ===
+    var ec_y = _y + bar_h + spacing;
+    var ec = variable_global_exists("dark_essence") ? global.dark_essence : 0;
+    var ec_max = variable_global_exists("dark_essence_max") ? global.dark_essence_max : 100;
+    var ec_fill = ec / ec_max;
+    
+    // Tło
+    draw_set_alpha(0.7);
+    draw_rectangle_color(_x, ec_y, _x + _w, ec_y + bar_h, 
+        $2e1a1a, $2e1a1a, $2e1a1a, $2e1a1a, false);
+    
+    // Wypełnienie (czerwony/różowy)
+    draw_set_alpha(0.9);
+    var ec_color = merge_color($660033, $ff3399, ec_fill);
+    draw_rectangle_color(_x + 2, ec_y + 2, _x + 2 + (_w - 4) * ec_fill, ec_y + bar_h - 2,
+        ec_color, ec_color, ec_color, ec_color, false);
+    
+    // Ramka
+    draw_set_alpha(1);
+    draw_rectangle_color(_x, ec_y, _x + _w, ec_y + bar_h,
+        $cc3366, $cc3366, $cc3366, $cc3366, true);
+    
+    // Tekst
+    draw_set_color($ffffff);
+    draw_text(_x + _w/2, ec_y + bar_h/2, string(floor(ec)) + "/" + string(ec_max) + " EC");
     
     draw_set_halign(fa_left);
     draw_set_valign(fa_top);

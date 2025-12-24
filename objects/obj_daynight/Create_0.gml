@@ -12,7 +12,7 @@ light_surface = -1;
 
 // Całkowita długość pełnego cyklu (24h w grze) w krokach
 // Przykład: 60 FPS * 60 sekund * 10 minut = 36000 kroków na pełny cykl
-global.daynight_cycle_length = room_speed * 60 * 1; // 10 minut realnego czasu
+global.daynight_cycle_length = room_speed * 60 * 3; // 10 minut realnego czasu
 
 // Proporcje pór dnia (muszą sumować się do 1.0)
 global.daynight_phase_ratios = {

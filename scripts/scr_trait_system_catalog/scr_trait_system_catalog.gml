@@ -282,11 +282,16 @@ function scr_trait_get_available_for_location(_loc_type) {
         // Sprawdź czy cecha jest dynamiczna (do nadania)
         if (def.type == "dynamic" && def.base_cost > 0) {
             // Sprawdź czy lokacja jest dozwolona
-            var valid = def.valid_locations;
-            if (array_length(valid) > 0) {
-                if (valid[0] == "all" || array_contains(valid, _loc_type)) {
-                    array_push(result, key);
+            if (variable_struct_exists(def, "valid_locations")) {
+                var valid = def.valid_locations;
+                if (array_length(valid) > 0) {
+                    if (valid[0] == "all" || array_contains(valid, _loc_type)) {
+                        array_push(result, key);
+                    }
                 }
+            } else {
+                // Brak valid_locations = dozwolone wszędzie
+                array_push(result, key);
             }
         }
         

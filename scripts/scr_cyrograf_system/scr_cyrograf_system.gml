@@ -8,9 +8,13 @@
 // KONFIGURACJA SYSTEMU CYROGRAFÓW
 // =============================================================================
 
-#macro CYROGRAF_BASE_COST 5           // Bazowy koszt EC za próbę negocjacji
+// === DUALNA EKONOMIA ===
+#macro CYROGRAF_BASE_COST_WSM 8       // Bazowy koszt WSM za próbę negocjacji
 #macro CYROGRAF_SUCCESS_BONUS_EC 10   // Bonus EC za udane pozyskanie sługi
 #macro CYROGRAF_EC_PER_NIGHT 2        // EC generowane przez sługę na noc
+
+// Legacy (dla kompatybilności wstecznej)
+#macro CYROGRAF_BASE_COST 8           // Deprecated: użyj CYROGRAF_BASE_COST_WSM
 
 #macro CYROGRAF_BASE_CHANCE 20        // Bazowa szansa sukcesu (%)
 #macro CYROGRAF_PODATNOSC_SCALE 0.5   // Mnożnik podatności (50 podatności = +25%)
@@ -39,13 +43,13 @@ function scr_cyrograf_system_init() {
         global.slugi = ds_list_create();
     }
     
-    // Statystyki
+    // Statystyki (dualna ekonomia)
     global.cyrograf_stats = {
         total_attempts: 0,
         successful: 0,
         failed: 0,
-        total_ec_spent: 0,
-        total_ec_earned: 0
+        total_wsm_spent: 0,    // koszt negocjacji w WSM
+        total_ec_earned: 0     // bonus EC za sukces
     };
     
     show_debug_message("CYROGRAF: System initialized");
@@ -68,16 +72,43 @@ function scr_cyrograf_system_cleanup() {
 function scr_tavern_get_visitors_detailed(_tavern) {
     var visitors = [];
     if (!variable_global_exists("npcs") || is_undefined(global.npcs)) return visitors;
-    
+
     var n = ds_list_size(global.npcs);
-    
+
+    // DEBUG: Sprawdź duplikaty w global.npcs
+    var unique_ids = ds_map_create();
+    var duplicate_count = 0;
+    for (var check_i = 0; check_i < n; check_i++) {
+        var check_npc = global.npcs[| check_i];
+        if (instance_exists(check_npc)) {
+            var id_str = string(check_npc.id);
+            if (ds_map_exists(unique_ids, id_str)) {
+                duplicate_count++;
+                show_debug_message("DUPLICATE NPC FOUND: " + id_str + " at index " + string(check_i));
+            } else {
+                ds_map_add(unique_ids, id_str, true);
+            }
+        }
+    }
+    ds_map_destroy(unique_ids);
+    if (duplicate_count > 0) {
+        show_debug_message("TAVERN WARNING: Found " + string(duplicate_count) + " duplicate NPCs in global.npcs!");
+    }
+
+    // Użyj mapy do śledzenia już dodanych NPC (zapobiega duplikatom)
+    var added_npcs = ds_map_create();
+
     for (var i = 0; i < n; i++) {
         var npc = global.npcs[| i];
         if (!instance_exists(npc)) continue;
         if (!variable_instance_exists(npc, "npc_data") || is_undefined(npc.npc_data)) continue;
-        
+
+        // Pomiń jeśli ten NPC już został dodany
+        var npc_id_str = string(npc.id);
+        if (ds_map_exists(added_npcs, npc_id_str)) continue;
+
         var nd = npc.npc_data;
-        
+
         if (nd.state == "at_tavern") {
             var dist = point_distance(npc.x, npc.y, _tavern.x, _tavern.y);
             if (dist < 100) {
@@ -87,17 +118,17 @@ function scr_tavern_get_visitors_detailed(_tavern) {
                 var stres = nd.traits.stres;
                 var is_sluga = nd.traits.sluga;
                 var staying_late = nd.staying_late;
-                
+
                 // Oblicz szansę na sukces
                 var chance = scr_cyrograf_calc_success_chance(npc);
-                
+
                 // Określ "nastrój" NPC
                 var mood = "neutralny";
                 if (staying_late) mood = "podchmielony";
                 if (stres > 50) mood = "zestresowany";
                 if (devotion > 60) mood = "pobozny";
                 if (is_sluga) mood = "sluga";
-                
+
                 var visitor_data = {
                     npc_inst: npc,
                     npc_id: npc.id,
@@ -110,12 +141,14 @@ function scr_tavern_get_visitors_detailed(_tavern) {
                     success_chance: chance,
                     mood: mood
                 };
-                
+
                 array_push(visitors, visitor_data);
+                ds_map_add(added_npcs, npc_id_str, true);
             }
         }
     }
-    
+
+    ds_map_destroy(added_npcs);
     return visitors;
 }
 
@@ -180,10 +213,10 @@ function scr_cyrograf_attempt_negotiation(_npc) {
     };
     
     // === WALIDACJA ===
-    
-    // Sprawdź czy to noc
-    if (!scr_trait_is_night()) {
-        result.message = "Negocjacje mozliwe tylko w nocy!";
+
+    // Sprawdź czy to noc lub wieczór
+    if (!scr_trait_is_night_or_evening()) {
+        result.message = "Negocjacje mozliwe tylko wieczorem lub w nocy!";
         return result;
     }
     
@@ -212,17 +245,17 @@ function scr_cyrograf_attempt_negotiation(_npc) {
         return result;
     }
     
-    // Sprawdź czy stać gracza
-    if (!scr_dark_essence_can_afford(CYROGRAF_BASE_COST)) {
-        result.message = "Za malo Esencji Ciemnosci! (potrzeba " + string(CYROGRAF_BASE_COST) + " EC)";
+    // === DUALNA EKONOMIA: koszt w WSM ===
+    if (!scr_myth_faith_can_afford(CYROGRAF_BASE_COST_WSM)) {
+        result.message = "Za malo Wiary w Stare Mity! (potrzeba " + string(CYROGRAF_BASE_COST_WSM) + " WSM)";
         return result;
     }
-    
+
     // === WYKONAJ PRÓBĘ ===
-    
-    // Pobierz koszt (wydaj EC)
-    scr_dark_essence_spend(CYROGRAF_BASE_COST);
-    result.ec_change = -CYROGRAF_BASE_COST;
+
+    // Pobierz koszt (wydaj WSM)
+    scr_myth_faith_spend(CYROGRAF_BASE_COST_WSM);
+    result.ec_change = 0; // koszt był w WSM, nie EC
     
     // Oblicz szansę
     var chance = scr_cyrograf_calc_success_chance(_npc);
@@ -233,7 +266,7 @@ function scr_cyrograf_attempt_negotiation(_npc) {
     
     // Aktualizuj statystyki
     global.cyrograf_stats.total_attempts++;
-    global.cyrograf_stats.total_ec_spent += CYROGRAF_BASE_COST;
+    global.cyrograf_stats.total_wsm_spent += CYROGRAF_BASE_COST_WSM;
     
     // === SUKCES ===
     if (roll < chance) {
@@ -360,7 +393,8 @@ function scr_cyrograf_generate_nightly_ec() {
 /// Rysuje panel karczmy z listą gości i opcją negocjacji
 function scr_ui_draw_tavern_panel(_tavern, _x, _y) {
     if (!instance_exists(_tavern)) return;
-    
+    if (!instance_exists(obj_ui_controller)) return;
+
     var w = TAVERN_UI_PANEL_WIDTH;
     var h = TAVERN_UI_PANEL_HEIGHT;
     var m = TAVERN_UI_MARGIN;
@@ -381,14 +415,18 @@ function scr_ui_draw_tavern_panel(_tavern, _x, _y) {
     draw_set_halign(fa_center);
     draw_text(_x + w/2, _y + m, "KARCZMA");
     
-    // Esencja Ciemności (prawy górny róg)
+    // Wiara w Stare Mity (prawy górny róg) - używana do negocjacji
     draw_set_halign(fa_right);
+    draw_set_color($66ccff);
+    draw_text(_x + w - m, _y + m, "WSM: " + string(floor(scr_myth_faith_get())));
+
+    // Esencja Ciemności (nagroda za sukces)
     draw_set_color($ff66ff);
-    draw_text(_x + w - m, _y + m, "EC: " + string(floor(global.dark_essence)));
-    
+    draw_text(_x + w - m, _y + m + lh, "EC: " + string(floor(global.dark_essence)));
+
     // Liczba sług
     draw_set_color(CYROGRAF_UI_SLUGA);
-    draw_text(_x + w - m, _y + m + lh, "Slugi: " + string(scr_cyrograf_get_sluga_count()));
+    draw_text(_x + w - m, _y + m + lh*2, "Slugi: " + string(scr_cyrograf_get_sluga_count()));
     
     draw_set_halign(fa_left);
     
@@ -403,12 +441,12 @@ function scr_ui_draw_tavern_panel(_tavern, _x, _y) {
     draw_text(_x + m, list_y, "Goscie w karczmie:");
     list_y += lh;
     
-    // Sprawdź czy jest noc
-    var is_night = scr_trait_is_night();
-    
-    if (!is_night) {
+    // Sprawdź czy jest noc lub wieczór
+    var can_negotiate = scr_trait_is_night_or_evening();
+
+    if (!can_negotiate) {
         draw_set_color(CYROGRAF_UI_FAIL);
-        draw_text(_x + m, list_y, "(Negocjacje mozliwe tylko w nocy)");
+        draw_text(_x + m, list_y, "(Negocjacje mozliwe wieczorem lub w nocy)");
         list_y += lh;
     }
     
@@ -434,7 +472,7 @@ function scr_ui_draw_tavern_panel(_tavern, _x, _y) {
             var my = device_mouse_y_to_gui(0);
             var hover = point_in_rectangle(mx, my, _x + m, npc_y, _x + w - m, npc_y + TAVERN_UI_NPC_HEIGHT - 4);
             
-            if (hover && !v.is_sluga && is_night) {
+            if (hover && !v.is_sluga && can_negotiate) {
                 draw_set_alpha(0.3);
                 draw_rectangle_color(_x + m, npc_y, _x + w - m, npc_y + TAVERN_UI_NPC_HEIGHT - 4,
                     CYROGRAF_UI_HIGHLIGHT, CYROGRAF_UI_HIGHLIGHT, CYROGRAF_UI_HIGHLIGHT, CYROGRAF_UI_HIGHLIGHT, false);
@@ -489,8 +527,8 @@ function scr_ui_draw_tavern_panel(_tavern, _x, _y) {
     draw_set_color($888888);
     draw_set_halign(fa_center);
     
-    if (is_night && visitor_count > 0) {
-        draw_text(_x + w/2, instr_y, "[Kliknij NPC] Negocjuj cyrograf (" + string(CYROGRAF_BASE_COST) + " EC) | [ESC] Zamknij");
+    if (can_negotiate && visitor_count > 0) {
+        draw_text(_x + w/2, instr_y, "[Kliknij NPC] Negocjuj (" + string(CYROGRAF_BASE_COST_WSM) + " WSM, +" + string(CYROGRAF_SUCCESS_BONUS_EC) + " EC) | [ESC] Zamknij");
     } else {
         draw_text(_x + w/2, instr_y, "[ESC] Zamknij");
     }
@@ -502,7 +540,6 @@ function scr_ui_draw_tavern_panel(_tavern, _x, _y) {
 // =============================================================================
 // UI - OBSŁUGA INPUT W PANELU KARCZMY
 // =============================================================================
-
 /// scr_ui_tavern_panel_input(tavern_inst)
 /// Obsługuje kliknięcia w panelu karczmy
 function scr_ui_tavern_panel_input(_tavern) {
@@ -512,23 +549,49 @@ function scr_ui_tavern_panel_input(_tavern) {
         return;
     }
     
-    // Sprawdź czy jest noc
-    if (!scr_trait_is_night()) return;
-    
     // Sprawdź kliknięcie
     if (!mouse_check_button_pressed(mb_left)) return;
     
-    // Pobierz pozycję panelu
+    // Pobierz pozycję panelu (MUSI BYĆ IDENTYCZNA jak w Draw!)
     var panel_x = (display_get_gui_width() - TAVERN_UI_PANEL_WIDTH) / 2;
     var panel_y = (display_get_gui_height() - TAVERN_UI_PANEL_HEIGHT) / 2;
+    var w = TAVERN_UI_PANEL_WIDTH;
     var m = TAVERN_UI_MARGIN;
     var lh = TAVERN_UI_LINE_HEIGHT;
     
-    // Pozycja myszy
+    // Pozycja myszy w GUI
     var mx = device_mouse_x_to_gui(0);
     var my = device_mouse_y_to_gui(0);
     
-    // Pobierz listę gości
+    // DEBUG
+    show_debug_message("TAVERN CLICK: mouse=(" + string(mx) + "," + string(my) + ")");
+    
+    // Sprawdź czy kliknięto w panel
+    if (!point_in_rectangle(mx, my, panel_x, panel_y, panel_x + w, panel_y + TAVERN_UI_PANEL_HEIGHT)) {
+        show_debug_message("TAVERN: Click outside panel");
+        return;
+    }
+    
+    // === OBLICZ POZYCJE IDENTYCZNIE JAK W DRAW ===
+    // Nagłówek "KARCZMA"
+    // header_y = panel_y + m + lh + 10 (linia pod nagłówkiem)
+    var header_y = panel_y + m + lh + 10;
+    
+    // Lista gości zaczyna się po linii i marginesie
+    var list_y = header_y + m;
+    
+    // Tekst "Goscie w karczmie:"
+    list_y += lh;
+    
+    // Sprawdź czy jest noc lub wieczór - jeśli nie, jest dodatkowa linia
+    var can_negotiate = scr_trait_is_night_or_evening();
+    if (!can_negotiate) {
+        list_y += lh;  // "(Negocjacje mozliwe wieczorem lub w nocy)"
+        show_debug_message("TAVERN: Not evening/night, negotiations disabled");
+        return;  // Nie pozwalaj na klikanie w dzień/rano
+    }
+    
+    // Pobierz listę gości z kontrolera
     var visitors = [];
     with (obj_ui_controller) {
         if (variable_instance_exists(id, "ui_tavern_visitors")) {
@@ -536,33 +599,66 @@ function scr_ui_tavern_panel_input(_tavern) {
         }
     }
     
-    // Sprawdź kliknięcie na NPC
-    var header_y = panel_y + m + lh + 10 + m + lh;
+    var visitor_count = array_length(visitors);
+    show_debug_message("TAVERN: " + string(visitor_count) + " visitors in list");
     
-    for (var i = 0; i < array_length(visitors); i++) {
+    if (visitor_count == 0) {
+        show_debug_message("TAVERN: No visitors to click");
+        return;
+    }
+    
+    // Sprawdź kliknięcie na każdego NPC
+    for (var i = 0; i < visitor_count; i++) {
         var v = visitors[i];
-        var npc_y = header_y + i * TAVERN_UI_NPC_HEIGHT;
+        var npc_y = list_y + i * TAVERN_UI_NPC_HEIGHT;
+        var npc_y_end = npc_y + TAVERN_UI_NPC_HEIGHT - 4;
         
-        if (point_in_rectangle(mx, my, panel_x + m, npc_y, panel_x + TAVERN_UI_PANEL_WIDTH - m, npc_y + TAVERN_UI_NPC_HEIGHT - 4)) {
+        show_debug_message("TAVERN: NPC[" + string(i) + "] area: y=" + string(npc_y) + " to " + string(npc_y_end));
+        
+        if (point_in_rectangle(mx, my, panel_x + m, npc_y, panel_x + w - m, npc_y_end)) {
+            
+            show_debug_message("TAVERN: Clicked on NPC " + string(v.npc_id) + " is_sluga=" + string(v.is_sluga));
             
             // Kliknięto na tego NPC
-            if (!v.is_sluga) {
-                // Próba negocjacji
-                var result = scr_cyrograf_attempt_negotiation(v.npc_inst);
-                
-                // Pokaż wynik (można rozbudować o popup)
-                show_debug_message("NEGOTIATION: " + result.message);
-                
-                // Zapisz wynik do wyświetlenia
-                with (obj_ui_controller) {
-                    ui_tavern_last_result = result;
-                    ui_tavern_result_timer = room_speed * 3; // 3 sekundy
-                }
+            if (v.is_sluga) {
+                show_debug_message("TAVERN: NPC is already sluga, cannot negotiate");
+                return;
             }
             
-            break;
+            // Sprawdź czy stać gracza (koszt w WSM)
+            if (!scr_myth_faith_can_afford(CYROGRAF_BASE_COST_WSM)) {
+                show_debug_message("TAVERN: Not enough WSM for negotiation");
+                with (obj_ui_controller) {
+                    ui_tavern_last_result = {
+                        success: false,
+                        message: "Za malo WSM! (potrzeba " + string(CYROGRAF_BASE_COST_WSM) + ")",
+                        ec_change: 0,
+                        chance_was: 0
+                    };
+                    ui_tavern_result_timer = room_speed * 3;
+                }
+                return;
+            }
+            
+            // Próba negocjacji
+            var result = scr_cyrograf_attempt_negotiation(v.npc_inst);
+            
+            show_debug_message("NEGOTIATION: " + result.message);
+            
+            // Zapisz wynik do wyświetlenia
+            with (obj_ui_controller) {
+                ui_tavern_last_result = result;
+                ui_tavern_result_timer = room_speed * 3;
+                
+                // WAŻNE: Odśwież listę gości po negocjacji
+                ui_tavern_visitors = scr_tavern_get_visitors_detailed(_tavern);
+            }
+            
+            return;  // Obsłużono kliknięcie
         }
     }
+    
+    show_debug_message("TAVERN: Click didn't hit any NPC");
 }
 
 /// scr_ui_open_tavern_panel(tavern_inst)
@@ -719,7 +815,7 @@ function scr_cyrograf_debug() {
     show_debug_message("  Total attempts: " + string(global.cyrograf_stats.total_attempts));
     show_debug_message("  Successful: " + string(global.cyrograf_stats.successful));
     show_debug_message("  Failed: " + string(global.cyrograf_stats.failed));
-    show_debug_message("  EC spent: " + string(global.cyrograf_stats.total_ec_spent));
+    show_debug_message("  WSM spent: " + string(global.cyrograf_stats.total_wsm_spent));
     show_debug_message("  EC earned: " + string(global.cyrograf_stats.total_ec_earned));
     
     // Lista sług

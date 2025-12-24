@@ -9,7 +9,7 @@ var _ver = keyboard_check(ord("S")) - keyboard_check(ord("W"));
 
 move_and_collide(_hor * move_speed, _ver * move_speed, obj_kolizja_parent);
 depth = -y;
-if (ui_is_active()) return;
+
 /*
 // W utwórz instancję lub w kodzie obiektu
 instance_create_layer(x, y, layer, obj_clear_fog);

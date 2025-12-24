@@ -414,11 +414,17 @@ function scr_npc_trait_with_location(_inst, _trait) {
 /// scr_trait_on_phase_change(new_phase, old_phase)
 /// Wywoływane przy zmianie fazy dnia (z obj_daynight)
 function scr_trait_on_phase_change(_new_phase, _old_phase) {
-    // Rozpoczęcie nocy - tick nocny
+    // === EVENING: Generowanie WSM (koniec dnia) ===
+    if (_new_phase == "evening" && _old_phase != "evening") {
+        scr_economy_day_tick();
+        show_debug_message("PHASE: Evening - WSM generated");
+    }
+
+    // Rozpoczęcie nocy - tick nocny (EC, cechy, cyrografy)
     if (_new_phase == "night" && _old_phase != "night") {
         scr_trait_night_tick();
     }
-    
+
     // Rozpoczęcie dnia - sprawdź ucieczkę NPC
     if (_new_phase == "morning" && _old_phase == "night") {
         scr_trait_morning_check();
