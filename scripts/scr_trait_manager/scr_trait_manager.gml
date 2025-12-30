@@ -13,39 +13,42 @@
 function scr_trait_create_instance(_trait_name, _level) {
     var def = scr_trait_get_definition(_trait_name);
     if (is_undefined(def)) return undefined;
-    
+
     _level = clamp(_level, 1, 4);
-    
+
+    // Bezpieczne pobieranie npc_mods z definicji (domyślne wartości jeśli brak)
+    var has_npc_mods = variable_struct_exists(def, "npc_mods") && !is_undefined(def.npc_mods);
+
     var instance = {
         name: _trait_name,
         display_name: def.display_name,
         level: _level,                    // I-Szept, II-Niepokój, III-Groza, IV-Legenda
         duration: -1,                     // -1 = permanentna, >0 = kroki do wygaśnięcia
         decay_rate: global.trait_config.base_decay_rate,
-        
+
         // Śledzenie eskalacji
         active_nights: 0,                 // ile nocy była aktywna (do eskalacji)
         last_night_active: -1,            // numer ostatniej nocy aktywności
-        
+
         // Śledzenie aktywacji (dla Zapomnianych Miejsc)
         visitor_count: 0,
         visitor_window_start: -1,
         activated: false,
-        
-        // Kopiuj modyfikatory NPC z definicji
+
+        // Kopiuj modyfikatory NPC z definicji (bezpieczne odczytywanie)
         npc_mods: {
-            pracowitosc: def.npc_mods.pracowitosc,
-            roztargnienie: def.npc_mods.roztargnienie,
-            ciekawosc: def.npc_mods.ciekawosc,
-            podatnosc: def.npc_mods.podatnosc,
-            towarzyskosc: def.npc_mods.towarzyskosc,
-            wanderlust: def.npc_mods.wanderlust
+            pracowitosc: has_npc_mods ? def.npc_mods.pracowitosc : 0,
+            roztargnienie: has_npc_mods ? def.npc_mods.roztargnienie : 0,
+            ciekawosc: has_npc_mods ? def.npc_mods.ciekawosc : 0,
+            podatnosc: has_npc_mods ? def.npc_mods.podatnosc : 0,
+            towarzyskosc: has_npc_mods ? def.npc_mods.towarzyskosc : 0,
+            wanderlust: has_npc_mods ? def.npc_mods.wanderlust : 0
         },
-        
+
         // Efekty (z uwzględnieniem poziomu)
         effects: scr_trait_calculate_effects(def, _level)
     };
-    
+
     return instance;
 }
 
@@ -387,12 +390,13 @@ function scr_trait_escalate(_settlement, _trait_name) {
     
     // Przelicz modyfikatory NPC (rosną z poziomem)
     var level_mult = trait.level;
-    trait.npc_mods.pracowitosc = def.npc_mods.pracowitosc * level_mult;
-    trait.npc_mods.roztargnienie = def.npc_mods.roztargnienie * level_mult;
-    trait.npc_mods.ciekawosc = def.npc_mods.ciekawosc * level_mult;
-    trait.npc_mods.podatnosc = def.npc_mods.podatnosc * level_mult;
-    trait.npc_mods.towarzyskosc = def.npc_mods.towarzyskosc * level_mult;
-    trait.npc_mods.wanderlust = def.npc_mods.wanderlust * level_mult;
+    var has_npc_mods = variable_struct_exists(def, "npc_mods") && !is_undefined(def.npc_mods);
+    trait.npc_mods.pracowitosc = has_npc_mods ? def.npc_mods.pracowitosc * level_mult : 0;
+    trait.npc_mods.roztargnienie = has_npc_mods ? def.npc_mods.roztargnienie * level_mult : 0;
+    trait.npc_mods.ciekawosc = has_npc_mods ? def.npc_mods.ciekawosc * level_mult : 0;
+    trait.npc_mods.podatnosc = has_npc_mods ? def.npc_mods.podatnosc * level_mult : 0;
+    trait.npc_mods.towarzyskosc = has_npc_mods ? def.npc_mods.towarzyskosc * level_mult : 0;
+    trait.npc_mods.wanderlust = has_npc_mods ? def.npc_mods.wanderlust * level_mult : 0;
     
     scr_trait_update_settlement_residents(_settlement);
     
