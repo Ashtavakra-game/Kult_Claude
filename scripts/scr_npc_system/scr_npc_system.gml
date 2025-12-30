@@ -203,7 +203,7 @@ function scr_npc_create(_inst, _kind, _home)
         detect_range: 120,
         wander_radius: 48,
         saw_encounter: noone,
-        visited_encounter: false,
+        visited_encounters_today: [],  // Lista ID encounterów odwiedzonych dziś
         last_x: _inst.x,
         last_y: _inst.y,
         sprite_idle: noone,
@@ -700,7 +700,15 @@ function scr_npc_should_divert(_inst, _enc)
 {
     if (!instance_exists(_enc)) return false;
     if (is_undefined(_enc.encounter_data)) return false;
-    if (_inst.npc_data.visited_encounter) return false;
+
+    // Sprawdź czy ten konkretny encounter był już odwiedzony dziś
+    var enc_id = _enc.id;
+    var visited_list = _inst.npc_data.visited_encounters_today;
+    for (var i = 0; i < array_length(visited_list); i++) {
+        if (visited_list[i] == enc_id) {
+            return false;  // Ten encounter już odwiedzony dziś
+        }
+    }
 
     var ed = _enc.encounter_data;
     var base = global.npc_base;
@@ -1047,22 +1055,40 @@ function scr_npc_handle_encounter(_inst, _enc) {
         return;
     }
 
-    // === JEDNORAZOWY BONUS WSM ZA ODWIEDZINY (raz na dzień per NPC) ===
-    if (!_inst.npc_data.visited_encounter) {
-        if (variable_global_exists("economy_config") && !is_undefined(global.economy_config)) {
-            var wsm_bonus = global.economy_config.wsm_per_encounter_visit;
-            var wsm_before = global.myth_faith;
-            scr_myth_faith_add(wsm_bonus);
-            show_debug_message("ECONOMY: NPC " + string(_inst.id) + " visited encounter, +" + string(wsm_bonus) + " WSM (was: " + string(wsm_before) + ", now: " + string(global.myth_faith) + ")");
-        } else {
-            show_debug_message("ENCOUNTER ERROR: economy_config nie istnieje lub jest undefined!");
-        }
-    } else {
-        show_debug_message("ENCOUNTER: NPC " + string(_inst.id) + " already visited encounter today");
-    }
+    var nd = _inst.npc_data;
 
-    _inst.npc_data.visited_encounter = true;
-    _inst.npc_data.traits.czas_bez_encountera = 0;
+    // === SPRAWDŹ CZY NPC JEST SŁUGĄ (do odnowienia encountera) ===
+    var is_sluga = variable_struct_exists(nd.traits, "sluga") && nd.traits.sluga;
+
+    // === OBSŁUGA WIZYTY PRZEZ NOWY SYSTEM ===
+    // scr_encounter_on_visit obsługuje: aktywację (jeśli sluga), WSM, globalny strach, traits
+    var encounter_active = scr_encounter_on_visit(_enc, _inst, is_sluga);
+
+    // === EFEKTY NA WSKAŹNIKI POPULACJI (funkcja logistyczna!) ===
+    // scr_encounter_affect_population używa funkcji logistycznych do modyfikacji WSM, Fear, Madness
+    scr_encounter_affect_population(_enc);
+
+    // === OZNACZ WIZYTĘ ===
+    // Dodaj encounter do listy odwiedzonych dziś (jeśli jeszcze nie ma)
+    var enc_id = _enc.id;
+    var already_visited = false;
+    for (var i = 0; i < array_length(nd.visited_encounters_today); i++) {
+        if (nd.visited_encounters_today[i] == enc_id) {
+            already_visited = true;
+            break;
+        }
+    }
+    if (!already_visited) {
+        array_push(nd.visited_encounters_today, enc_id);
+    }
+    nd.traits.czas_bez_encountera = 0;
+    ed.last_visited_by = _inst;
+
+    // === EFEKTY TYLKO GDY ENCOUNTER AKTYWNY ===
+    if (!encounter_active) {
+        show_debug_message("ENCOUNTER: " + string(ed.typ) + " nieaktywny - NPC " + string(_inst.id) + " nie otrzymuje efektów");
+        return;
+    }
 
     // === Znajdź najbliższy settlement i zastosuj modyfikatory ===
     var nearest_settlement = noone;
@@ -1078,7 +1104,7 @@ function scr_npc_handle_encounter(_inst, _enc) {
             }
         }
     }
-    
+
     // Modyfikator siły encountera od cech lokacji
     var strength_mult = 1.0;
     var fear_bonus = 0;
@@ -1086,29 +1112,30 @@ function scr_npc_handle_encounter(_inst, _enc) {
         strength_mult = scr_trait_get_encounter_modifier(nearest_settlement);
         fear_bonus = scr_trait_get_fear_bonus(nearest_settlement);
     }
-    
+
     var modified_sila = ed.sila * strength_mult;
-    
+
     var roll = irandom(100);
     var podatnosc = scr_npc_trait(_inst, "podatnosc");
     var threshold = podatnosc + modified_sila * 20;
-    
+
     if (roll < threshold) {
         switch (ed.efekt) {
             case "strach":
-                _inst.npc_data.traits.stres += modified_sila * 10;
+                nd.traits.stres += modified_sila * 10;
                 if (!variable_struct_exists(ed, "akumulacja_strachu")) ed.akumulacja_strachu = 0;
                 ed.akumulacja_strachu += round(modified_sila) + fear_bonus;
+                show_debug_message("ENCOUNTER EFFECT: NPC " + string(_inst.id) + " +stres " + string(modified_sila * 10));
                 break;
             case "urok":
-                _inst.npc_data.traits.sluga = true;
-                _inst.npc_data.traits.follower = true;
+                nd.traits.sluga = true;
+                nd.traits.follower = true;
                 if (is_undefined(global.followers)) global.followers = 0;
                 global.followers += 1;
+                show_debug_message("ENCOUNTER EFFECT: NPC " + string(_inst.id) + " stał się sługą!");
                 break;
         }
     }
-	
 }
 
 function scr_npc_return_home(_inst)
@@ -1352,10 +1379,10 @@ function scr_npc_check_phase_change(_inst)
     if (nd.last_phase != current_phase) {
         _npc_debug("NPC " + string(_inst.id) + " ZMIANA PORY: " + nd.last_phase + " -> " + current_phase);
         
-        // Zmiana z nocy na poranek - reset planu
+        // Zmiana z nocy na poranek - reset planu i listy odwiedzonych encounterów
         if (nd.last_phase == "night" && current_phase == "morning") {
             scr_npc_reset_daily_plan(_inst);
-            nd.visited_encounter = false;
+            nd.visited_encounters_today = [];  // Reset listy - NPC może znów odwiedzać wszystkie encountery
         }
         
         // Zmiana na noc - jeśli nie jest w karczmie, wróć do domu
@@ -1435,7 +1462,7 @@ function scr_npc_step(_inst)
             }
             // W innych porach dnia - wstań
             nd.state = "idle";
-            nd.visited_encounter = false;
+            // Reset visited_encounters_today następuje tylko przy zmianie nocy→poranek
         }
         return;
     }
@@ -1494,7 +1521,7 @@ function scr_npc_step(_inst)
             nd.target = noone;
             nd.target_point = noone;
             nd.target_type = "";
-            nd.visited_encounter = false;
+            // Reset visited_encounters_today następuje tylko przy zmianie nocy→poranek
             scr_npc_start_rest(_inst);
             return;
         } else if (tt == "explore_point") {

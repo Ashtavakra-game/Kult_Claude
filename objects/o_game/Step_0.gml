@@ -144,3 +144,34 @@ if (keyboard_check_pressed(vk_f8)) {
 if (keyboard_check_pressed(vk_f1)) {
     scr_debug_encounters();
 }
+
+// === DEBUG: Wskaźniki populacji (Numpad) ===
+// Numpad 1 - Dodaj WSM
+if (keyboard_check_pressed(vk_numpad1)) {
+    scr_add_myth_faith(10, "debug");
+    show_debug_message("DEBUG: +10 WSM. Total: " + string(global.myth_faith));
+}
+
+// Numpad 2 - Dodaj Fear
+if (keyboard_check_pressed(vk_numpad2)) {
+    scr_add_fear(10, "debug");
+    show_debug_message("DEBUG: +10 Fear. Total: " + string(global.collective_fear));
+}
+
+// Numpad 3 - Dodaj Madness
+if (keyboard_check_pressed(vk_numpad3)) {
+    scr_add_madness(10, "debug");
+    show_debug_message("DEBUG: +10 Madness. Total: " + string(global.collective_madness));
+}
+
+// Numpad 0 - Debug info populacji
+if (keyboard_check_pressed(vk_numpad0)) {
+    show_debug_message("=== POPULATION DEBUG ===");
+    show_debug_message("WSM: " + string(global.myth_faith) + "/" + string(global.myth_faith_max));
+    show_debug_message("Fear: " + string(global.collective_fear) + "/" + string(global.fear_max));
+    show_debug_message("Madness: " + string(global.collective_madness) + "/" + string(global.madness_max));
+    show_debug_message("Susceptibility: " + string(scr_logistic_susceptibility(global.collective_fear) * 100) + "%");
+    show_debug_message("Fear Zone: " + scr_get_fear_zone());
+    show_debug_message("Win Counter: " + string(global.win_counter) + "/5");
+    show_debug_message("Lose Counter: " + string(global.lose_counter) + "/7");
+}

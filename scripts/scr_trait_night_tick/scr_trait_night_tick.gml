@@ -425,8 +425,18 @@ function scr_trait_on_phase_change(_new_phase, _old_phase) {
         scr_trait_night_tick();
     }
 
-    // Rozpoczęcie dnia - sprawdź ucieczkę NPC
+    // Rozpoczęcie dnia - tick dzienny dla encounterów i NPC traits
     if (_new_phase == "morning" && _old_phase == "night") {
+        // Tick dzienny encounterów (zmniejsza days_remaining, dezaktywuje wygasłe)
+        scr_encounter_daily_tick();
+
+        // Tick dzienny tymczasowych traits NPC z encounterów
+        scr_encounter_npc_traits_daily_tick();
+
+        // Tick populacji (zanik wskaźników, przyrost szaleństwa, warunki końca gry)
+        scr_population_night_tick();
+
+        // Sprawdź ucieczkę NPC
         scr_trait_morning_check();
     }
 }

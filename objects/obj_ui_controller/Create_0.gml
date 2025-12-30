@@ -15,4 +15,9 @@ ui_tavern_visitors = [];
 ui_tavern_last_result = undefined;
 ui_tavern_result_timer = 0;
 
+// Zmienne dla panelu lokacji (traits) - obsługa myszki
+ui_trait_hitboxes = [];          // Lista hitboxów cech [{x1, y1, x2, y2, trait_name, can_buy}]
+ui_trait_hovered_index = -1;     // Indeks cechy pod kursorem (-1 = żadna)
+ui_trait_hovered_name = "";      // Nazwa cechy pod kursorem
+
 show_debug_message("UI CONTROLLER: Created, blocking=" + string(global.ui_blocking_input));

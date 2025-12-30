@@ -27,6 +27,7 @@ global.taverns       = ds_list_create();  // NOWE - lista karczm
 global.fear_buffer   = 0;
 global.followers     = 0;
 global.madness_pool  = 0;
+global.global_fear   = 0;  // Globalny poziom strachu (generowany przez aktywne encountery)
 
 // ------------------------------------------------------
 // NAVGRID
@@ -79,4 +80,7 @@ scr_cyrograf_system_init();
 
 // Globalna wiara (nowa zmienna)
 global.global_faith = 100;  // 0-100, wysoka = stabilny świat
+
+// === SYSTEM WSKAŹNIKÓW POPULACJI ===
+scr_population_system_init();
 

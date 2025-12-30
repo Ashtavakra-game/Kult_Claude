@@ -151,39 +151,92 @@ function scr_ui_draw_location_panel(_settlement, _x, _y) {
     draw_set_color(TRAIT_UI_HIGHLIGHT_COLOR);
     draw_text(_x + m, info_y, "Dostepne cechy:");
     info_y += lh;
-    
+
     // Sprawdź czy można działać (noc)
     var can_act = scr_trait_can_act();
-    
+
     if (!can_act) {
         draw_set_color($6666ff);
         draw_text(_x + m, info_y, "(akcje dostepne tylko w nocy)");
         info_y += lh;
     }
-    
+
+    // Pobierz pozycję myszki (GUI)
+    var mx = device_mouse_x_to_gui(0);
+    var my = device_mouse_y_to_gui(0);
+
+    // Reset hitboxów i hovered index
+    with (obj_ui_controller) {
+        ui_trait_hitboxes = [];
+        ui_trait_hovered_index = -1;
+        ui_trait_hovered_name = "";
+    }
+
     // Lista dostępnych cech
     var available = scr_trait_get_available_for_location(loc_type);
-    var trait_num = 1;
-    
+    var trait_num = 0;  // Indeks od 0
+
     for (var i = 0; i < array_length(available); i++) {
         var trait_name = available[i];
         var def = scr_trait_get_definition(trait_name);
         if (is_undefined(def)) continue;
-        
+
         // Sprawdź czy już ma tę cechę
         if (scr_trait_settlement_has(_settlement, trait_name)) continue;
-        
+
         // Sprawdź wymagania wstępne
         var prereq_met = scr_trait_check_prerequisite(trait_name, _settlement);
-        
+
         // Oblicz koszt
         var cost = scr_trait_get_cost(trait_name, def.base_cost);
         cost = scr_trait_apply_cost_modifiers(_settlement, cost);
-        
+
         var can_afford = scr_dark_essence_can_afford(cost);
         var has_slot = free_slots > 0;
-        
-        // Kolor zależny od dostępności
+        var can_buy = prereq_met && has_slot && can_afford && can_act;
+
+        // Hitbox dla tej cechy
+        var hb_x1 = _x + m - 4;
+        var hb_y1 = info_y - 2;
+        var hb_x2 = _x + w - m;
+        var hb_y2 = info_y + lh - 2;
+
+        // Sprawdź czy myszka jest nad tym elementem
+        var is_hovered = point_in_rectangle(mx, my, hb_x1, hb_y1, hb_x2, hb_y2);
+
+        // Zapisz hitbox
+        with (obj_ui_controller) {
+            array_push(ui_trait_hitboxes, {
+                x1: hb_x1, y1: hb_y1, x2: hb_x2, y2: hb_y2,
+                trait_name: trait_name,
+                can_buy: can_buy,
+                index: trait_num
+            });
+
+            if (is_hovered) {
+                ui_trait_hovered_index = trait_num;
+                ui_trait_hovered_name = trait_name;
+            }
+        }
+
+        // === RYSOWANIE HOVER EFFECT ===
+        if (is_hovered) {
+            // Tło hover
+            draw_set_alpha(0.3);
+            if (can_buy) {
+                draw_set_color(TRAIT_UI_AVAILABLE_COLOR);  // Zielone tło gdy można kupić
+            } else {
+                draw_set_color($666666);  // Szare tło gdy nie można
+            }
+            draw_rectangle(hb_x1, hb_y1, hb_x2, hb_y2, false);
+            draw_set_alpha(1);
+
+            // Ramka hover
+            draw_set_color(can_buy ? TRAIT_UI_HIGHLIGHT_COLOR : $888888);
+            draw_rectangle(hb_x1, hb_y1, hb_x2, hb_y2, true);
+        }
+
+        // Kolor tekstu zależny od dostępności
         if (!prereq_met) {
             draw_set_color($666666); // zablokowane
         } else if (!has_slot) {
@@ -193,14 +246,14 @@ function scr_ui_draw_location_panel(_settlement, _x, _y) {
         } else if (!can_act) {
             draw_set_color($888888); // dzień
         } else {
-            draw_set_color(TRAIT_UI_AVAILABLE_COLOR); // dostępne
+            draw_set_color(is_hovered ? $ffffff : TRAIT_UI_AVAILABLE_COLOR); // dostępne (jaśniejsze przy hover)
         }
-        
-        var trait_text = "[" + string(trait_num) + "] " + def.display_name + " [" + string(cost) + " EC]";
+
+        var trait_text = "[" + string(trait_num + 1) + "] " + def.display_name + " [" + string(cost) + " EC]";
         draw_text(_x + m, info_y, trait_text);
         info_y += lh;
         trait_num++;
-        
+
         // Jeśli zablokowane - pokaż powód
         if (!prereq_met && def.prerequisite != "") {
             draw_set_color($555555);
@@ -208,12 +261,19 @@ function scr_ui_draw_location_panel(_settlement, _x, _y) {
             info_y += lh - 4;
         }
     }
-    
+
+    // === TOOLTIP DLA HOVERED CECHY ===
+    with (obj_ui_controller) {
+        if (ui_trait_hovered_name != "") {
+            scr_ui_draw_trait_tooltip(ui_trait_hovered_name, mx + 15, my + 10);
+        }
+    }
+
     // === INSTRUKCJE ===
     info_y = _y + h - lh - m;
     draw_set_color($888888);
     draw_set_halign(fa_center);
-    draw_text(_x + w/2, info_y, "[1-5] Nadaj ceche | [E] Eskaluj | [ESC] Zamknij");
+    draw_text(_x + w/2, info_y, "[LPM/1-5] Nadaj | [E] Eskaluj | [ESC] Zamknij");
     
     draw_set_halign(fa_left);
     draw_set_color(c_white);
@@ -284,18 +344,41 @@ function scr_ui_location_panel_input(_settlement) {
         scr_ui_close_location_panel();
         return;
     }
-    
-    // Nadawanie cech (klawisze 1-5)
-    if (!scr_trait_can_act()) return; // tylko w nocy
-    
+
+    // === OBSŁUGA KLIKNIĘCIA MYSZKĄ ===
+    if (mouse_check_button_pressed(mb_left)) {
+        with (obj_ui_controller) {
+            // Sprawdź czy kliknięto na cechę z listy
+            if (ui_trait_hovered_index >= 0 && ui_trait_hovered_name != "") {
+                // Znajdź hitbox dla tego indeksu
+                for (var i = 0; i < array_length(ui_trait_hitboxes); i++) {
+                    var hb = ui_trait_hitboxes[i];
+                    if (hb.index == ui_trait_hovered_index) {
+                        if (hb.can_buy) {
+                            var success = scr_trait_apply_to_settlement(_settlement, hb.trait_name);
+                            if (success) {
+                                show_debug_message("UI: Applied trait '" + hb.trait_name + "' via mouse click!");
+                            }
+                        } else {
+                            show_debug_message("UI: Cannot buy trait '" + hb.trait_name + "' - requirements not met");
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // === OBSŁUGA KLAWISZY 1-5 ===
+    // Pobierz listę filtrowanych cech (taką samą jak w rysowaniu)
     var loc_type = "chata";
-    if (!is_undefined(_settlement.settlement_data) && 
+    if (!is_undefined(_settlement.settlement_data) &&
         variable_struct_exists(_settlement.settlement_data, "location_type")) {
         loc_type = _settlement.settlement_data.location_type;
     }
-    
+
     var available = scr_trait_get_available_for_location(loc_type);
-    
+
     // Filtruj cechy które settlement już ma
     var filtered = [];
     for (var i = 0; i < array_length(available); i++) {
@@ -303,7 +386,7 @@ function scr_ui_location_panel_input(_settlement) {
             array_push(filtered, available[i]);
         }
     }
-    
+
     // Klawisze 1-5 nadają odpowiednie cechy
     for (var key = ord("1"); key <= ord("5"); key++) {
         if (keyboard_check_pressed(key)) {
@@ -312,12 +395,12 @@ function scr_ui_location_panel_input(_settlement) {
                 var trait_name = filtered[idx];
                 var success = scr_trait_apply_to_settlement(_settlement, trait_name);
                 if (success) {
-                    show_debug_message("UI: Applied trait '" + trait_name + "'!");
+                    show_debug_message("UI: Applied trait '" + trait_name + "' via key " + chr(key) + "!");
                 }
             }
         }
     }
-    
+
     // Eskalacja cechy (klawisz E)
     if (keyboard_check_pressed(ord("E"))) {
         var traits = scr_trait_settlement_get_all(_settlement);

@@ -10,7 +10,7 @@ settlement_data.trait_slots = 2;         // chaty mają 2 sloty
 settlement_data.location_type = "chata";
 settlement_data.local_faith = irandom_range(30, 70);  // losowa wiara
 
-settlement_data.max_residents = 2;
+settlement_data.max_residents = 4;
 settlement_data.name = "Chata";
 
 // Tworzenie NPC
