@@ -1022,26 +1022,32 @@ function scr_npc_start_work(_inst, _res)
 }
 
 function scr_npc_finish_work(_inst) {
-    var _res = _inst.npc_data.target;
+    var nd = _inst.npc_data;
+    var _res = nd.target;
+
     if (instance_exists(_res) && !is_undefined(_res.resource_data)) {
         var rd = _res.resource_data;
-        
-        if (instance_exists(_inst.npc_data.home) && !is_undefined(_inst.npc_data.home.settlement_data)) {
-            var home = _inst.npc_data.home;
+
+        if (instance_exists(nd.home) && !is_undefined(nd.home.settlement_data)) {
+            var home = nd.home;
             var map = home.settlement_data.resources;
-            
-            // === NOWE: Modyfikator produktywności od cech ===
+
+            // === Modyfikator produktywności od cech ===
             var productivity_mult = scr_trait_get_productivity_modifier(home);
             var actual_value = round(rd.wartosc * productivity_mult);
-            
+
             if (!ds_map_exists(map, rd.typ)) ds_map_add(map, rd.typ, 0);
             var prev = ds_map_find_value(map, rd.typ);
             ds_map_replace(map, rd.typ, prev + actual_value);
         }
+
+        // === NOWY SYSTEM ZASOBÓW - WSZYSCY NPC PRZY SOURCE ===
+        // Każdy NPC pracujący przy source może generować zasoby
+        scr_visit_check_and_apply_npc(_inst, _res, "source");
     }
-    
-    _inst.npc_data.work_done_today = true;
-    _inst.npc_data.state = "idle";
+
+    nd.work_done_today = true;
+    nd.state = "idle";
 }
 function scr_npc_handle_encounter(_inst, _enc) {
     if (!instance_exists(_enc)) {
@@ -1057,18 +1063,23 @@ function scr_npc_handle_encounter(_inst, _enc) {
 
     var nd = _inst.npc_data;
 
-    // === SPRAWDŹ CZY NPC JEST SŁUGĄ (do odnowienia encountera) ===
+    // === SPRAWDŹ CZY NPC JEST SŁUGĄ (tylko sługi aktywują encountery) ===
     var is_sluga = variable_struct_exists(nd.traits, "sluga") && nd.traits.sluga;
 
-    // === OBSŁUGA WIZYTY PRZEZ NOWY SYSTEM ===
-    // scr_encounter_on_visit obsługuje: aktywację (jeśli sluga), WSM, globalny strach, traits
+    // === NOWY SYSTEM ZASOBÓW - WSZYSCY NPC generują zasoby ===
+    // Każdy NPC odwiedzający encounter przyznaje Ofiarę i Strach raz na dobę
+    scr_visit_check_and_apply_npc(_inst, _enc, "encounter");
+
+    // === TYLKO SŁUGI AKTYWUJĄ ENCOUNTERY ===
+    if (is_sluga && !ed.active) {
+        scr_encounter_activate(_enc);
+        show_debug_message("VISIT: Sluga " + string(_inst.id) + " aktywowal encounter " + string(ed.typ));
+    }
+
+    // === OBSŁUGA WIZYTY PRZEZ STARY SYSTEM ===
     var encounter_active = scr_encounter_on_visit(_enc, _inst, is_sluga);
 
-    // === EFEKTY NA WSKAŹNIKI POPULACJI (funkcja logistyczna!) ===
-    // scr_encounter_affect_population używa funkcji logistycznych do modyfikacji WSM, Fear, Madness
-    scr_encounter_affect_population(_enc);
-
-    // === OZNACZ WIZYTĘ ===
+    // === OZNACZ WIZYTĘ (stary system dla NPC) ===
     // Dodaj encounter do listy odwiedzonych dziś (jeśli jeszcze nie ma)
     var enc_id = _enc.id;
     var already_visited = false;
@@ -1159,19 +1170,26 @@ function scr_npc_return_home(_inst)
 function scr_npc_start_rest(_inst)
 {
     var base = global.npc_base;
-    
+    var nd = _inst.npc_data;
+
     var time = irandom_range(
         base.czas_odpoczynku_min * room_speed,
         base.czas_odpoczynku_max * room_speed
     );
     time *= global.npc_mod.czas_odpoczynku_mult;
-    
-    _inst.npc_data.state = "resting";
-    _inst.npc_data.rest_timer = time;
-    _inst.npc_data.target = noone;
-    _inst.npc_data.target_point = noone;
-    _inst.npc_data.target_type = "";
+
+    nd.state = "resting";
+    nd.rest_timer = time;
+    nd.target = noone;
+    nd.target_point = noone;
+    nd.target_type = "";
     scr_npc_cleanup_path(_inst);
+
+    // === NOWY SYSTEM ZASOBÓW - WSZYSCY NPC W SETTLEMENT ===
+    // Każdy NPC wracający do domu generuje zasoby (-1 Strach)
+    if (instance_exists(nd.home)) {
+        scr_visit_check_and_apply_npc(_inst, nd.home, "settlement");
+    }
 }
 
 function scr_npc_start_explore(_inst)
@@ -1235,11 +1253,14 @@ function scr_npc_arrive_tavern(_inst)
 {
     var nd = _inst.npc_data;
     var base = global.npc_base;
-    
+
     nd.visited_tavern_today = true;
     nd.state = "at_tavern";
     scr_npc_cleanup_path(_inst);
-    
+
+    // UWAGA: Karczma NIE generuje zasobów przez NPC
+    // Karczma reaguje tylko na obecność gracza (w Player Step)
+
     // Podstawowy czas w karczmie
     var time = irandom_range(
         base.czas_karczmy_min * room_speed,

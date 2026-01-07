@@ -1,8 +1,9 @@
 /// =============================================================================
-/// BORUTA - SYSTEM WSKAŹNIKÓW POPULACJI
+/// BORUTA - SYSTEM ZASOBÓW (OFIARA i STRACH)
 /// =============================================================================
-/// Trzy główne wskaźniki: Wiara w Stare Mity, Strach, Szaleństwo
-/// Funkcja logistyczna określa wzajemne relacje między wskaźnikami
+/// Dwa główne zasoby: Ofiara i Strach
+/// Zasoby bez ograniczeń - mogą być ujemne i dodatnie
+/// Przyznawane/odejmowane raz na dobę przy odwiedzeniu miejsca
 /// =============================================================================
 
 // =============================================================================
@@ -12,334 +13,646 @@
 /// scr_population_system_init()
 /// Inicjalizacja systemu - wywołaj w o_game Create
 function scr_population_system_init() {
-    // === GŁÓWNE WSKAŹNIKI POPULACJI ===
-    global.myth_faith = 0;          // Wiara w Stare Mity (0-100) - CEL GRY
-    global.collective_fear = 0;     // Strach Zbiorowy (0-100)
-    global.collective_madness = 0;  // Szaleństwo (0-100)
+    // === GŁÓWNE ZASOBY ===
+    global.ofiara = 0;         // Ofiara - waluta do kupowania traits (>=0)
+    global.strach = 0;         // Strach - współczynnik (bez ograniczeń)
+    global.wwsm = 0;           // WwSM (Wiara w Stare Mity) - współczynnik (bez ograniczeń)
 
-    // === LIMITY ===
-    global.myth_faith_max = 100;
-    global.fear_max = 100;
-    global.madness_max = 100;
+    // === SYSTEM ODWIEDZIN GRACZA ===
+    // Gracz aktywuje tylko karczmę (raz na dobę)
+    global.visited_today = {
+        tavern_active: false   // czy gracz był dzisiaj w pobliżu karczmy
+    };
+    // NPC mają swoje własne listy visited_places_today w npc_data
 
-    // === PROGI FUNKCJI LOGISTYCZNEJ ===
-    global.fear_optimal_low = 20;      // początek optymalnego zakresu
-    global.fear_optimal_peak = 40;     // szczyt podatności
-    global.fear_optimal_high = 60;     // koniec optymalnego zakresu
-    global.fear_critical = 70;         // powyżej = szaleństwo rośnie szybko
-
-    // === TEMPO ZMIAN (na tick nocny) ===
-    global.wsm_decay_rate = 0.1;       // naturalny spadek WSM
-    global.fear_decay_rate = 0.3;      // naturalny spadek strachu
-    global.madness_decay_rate = 0.05;  // bardzo wolny spadek szaleństwa
+    // === DZIEŃ W GRZE ===
+    global.day_counter = 0;
+    global.last_phase = "";
 
     // === FLAGI STANU GRY ===
     global.game_won = false;
     global.game_lost = false;
     global.game_lost_reason = "";
-    global.win_counter = 0;            // ile nocy z rzędu warunek wygranej
-    global.lose_counter = 0;           // ile nocy z rzędu warunek przegranej
 
-    show_debug_message("=== POPULATION SYSTEM INITIALIZED ===");
+    show_debug_message("=== RESOURCE SYSTEM INITIALIZED (Ofiara=0, Strach=0) ===");
 }
 
 // =============================================================================
-// FUNKCJE LOGISTYCZNE
+// MODYFIKACJA ZASOBÓW
 // =============================================================================
 
-/// scr_logistic_susceptibility(fear)
-/// Zwraca mnożnik podatności na WSM (0.0 - 1.0)
-/// Krzywa dzwonowa - optimum w zakresie 20-60 strachu
-///
-/// Interpretacja narracyjna:
-/// 0-20:  Niska podatność - "Ludzie pewni siebie, nie szukają wyjaśnień"
-/// 20-35: Rosnąca - "Coś jest nie tak... może przodkowie wiedzieli więcej?"
-/// 35-45: OPTYMALNA - "Złoty środek – otwarci na mity, nie sparaliżowani"
-/// 45-60: Malejąca - "Strach zaczyna paraliżować, trudniej słuchać legend"
-/// 60-100: Bardzo niska - "Panika! Szaleństwo! Nikt nie słucha"
-
-function scr_logistic_susceptibility(_fear) {
-    var low = global.fear_optimal_low;
-    var high = global.fear_optimal_high;
-    var k = 0.12; // stromość krzywej
-
-    // Lewa strona krzywej (rosnąca)
-    var left = 1 / (1 + exp(-k * (_fear - low)));
-
-    // Prawa strona krzywej (malejąca)
-    var right = 1 / (1 + exp(k * (_fear - high)));
-
-    // Kombinacja daje krzywą dzwonową
-    return clamp(left * right * 1.3, 0, 1);
-}
-
-/// scr_logistic_madness_growth(fear)
-/// Zwraca przyrost szaleństwa na tick (0.0 - max)
-/// Szaleństwo rośnie wykładniczo powyżej progu krytycznego
-
-function scr_logistic_madness_growth(_fear) {
-    var critical = global.fear_critical;
-    var max_growth = 0.5;
-    var k = 0.1;
-
-    // Poniżej 80% progu krytycznego - brak przyrostu
-    if (_fear < critical * 0.8) return 0;
-
-    // Funkcja logistyczna dla przyrostu szaleństwa
-    return max_growth / (1 + exp(-k * (_fear - (critical + 10))));
-}
-
-/// scr_logistic_fear_effectiveness(current_fear)
-/// Zwraca skuteczność dodawania strachu (malejąca przy wysokim strachu)
-/// Symuluje "nasycenie" - ludzie już tak przestraszeni, że więcej się nie da
-
-function scr_logistic_fear_effectiveness(_fear) {
-    var saturation = 80; // punkt nasycenia
-    var k = 0.08;
-
-    return 1 - (1 / (1 + exp(-k * (_fear - saturation))));
-}
-
-// =============================================================================
-// MODYFIKACJA WSKAŹNIKÓW
-// =============================================================================
-
-/// scr_add_myth_faith(amount, source)
-/// Dodaje WSM z uwzględnieniem podatności i kary za szaleństwo
-/// @param _amount - bazowa ilość do dodania
+/// scr_add_ofiara(amount, source)
+/// Dodaje/odejmuje Ofiarę (bez ograniczeń)
+/// @param _amount - ilość do dodania (ujemna = odjęcie)
 /// @param _source - źródło (do debugowania)
-/// @return actual_gain - faktycznie dodana wartość
+/// @return _amount - dodana wartość
+function scr_add_ofiara(_amount, _source) {
+    global.ofiara += _amount;
 
-function scr_add_myth_faith(_amount, _source) {
-    // Podatność zależy od poziomu strachu (funkcja logistyczna!)
-    var susceptibility = scr_logistic_susceptibility(global.collective_fear);
+    var _sign = _amount >= 0 ? "+" : "";
+    show_debug_message("OFIARA " + _sign + string(_amount) + " = " + string(global.ofiara) + " (from " + _source + ")");
 
-    // Szaleństwo zmniejsza przyrost (ludzie nie słuchają)
-    var madness_penalty = 1 - (global.collective_madness / 150);
-    madness_penalty = clamp(madness_penalty, 0.1, 1);
-
-    // Oblicz faktyczny przyrost
-    var actual_gain = _amount * susceptibility * madness_penalty;
-
-    global.myth_faith = clamp(global.myth_faith + actual_gain, 0, global.myth_faith_max);
-
-    show_debug_message("WSM +" + string(actual_gain) + " (base:" + string(_amount) +
-        " x suscept:" + string(susceptibility) + " x madPen:" + string(madness_penalty) +
-        ") from " + _source);
-
-    return actual_gain;
+    return _amount;
 }
 
-/// scr_add_fear(amount, source)
-/// Dodaje strach z uwzględnieniem nasycenia
-/// @param _amount - bazowa ilość do dodania
+/// scr_add_strach(amount, source)
+/// Dodaje/odejmuje Strach (bez ograniczeń)
+/// @param _amount - ilość do dodania (ujemna = odjęcie)
 /// @param _source - źródło (do debugowania)
-/// @return actual_gain - faktycznie dodana wartość
+/// @return _amount - dodana wartość
+function scr_add_strach(_amount, _source) {
+    global.strach += _amount;
 
-function scr_add_fear(_amount, _source) {
-    // Skuteczność maleje przy wysokim strachu (nasycenie)
-    var effectiveness = scr_logistic_fear_effectiveness(global.collective_fear);
-    var actual_gain = _amount * effectiveness;
+    var _sign = _amount >= 0 ? "+" : "";
+    show_debug_message("STRACH " + _sign + string(_amount) + " = " + string(global.strach) + " (from " + _source + ")");
 
-    global.collective_fear = clamp(global.collective_fear + actual_gain, 0, global.fear_max);
-
-    show_debug_message("FEAR +" + string(actual_gain) + " (base:" + string(_amount) +
-        " x effect:" + string(effectiveness) + ") from " + _source);
-
-    return actual_gain;
+    return _amount;
 }
 
-/// scr_add_madness(amount, source)
-/// Dodaje szaleństwo (bez modyfikatorów)
-/// @param _amount - ilość do dodania
+/// scr_add_wwsm(amount, source)
+/// Dodaje/odejmuje WwSM - Wiarę w Stare Mity (bez ograniczeń, może być ujemne)
+/// @param _amount - ilość do dodania (ujemna = odjęcie)
 /// @param _source - źródło (do debugowania)
-/// @return amount - dodana wartość
+/// @return _amount - dodana wartość
+function scr_add_wwsm(_amount, _source) {
+    global.wwsm += _amount;
 
-function scr_add_madness(_amount, _source) {
-    global.collective_madness = clamp(global.collective_madness + _amount, 0, global.madness_max);
-
-    show_debug_message("MADNESS +" + string(_amount) + " from " + _source);
+    var _sign = _amount >= 0 ? "+" : "";
+    show_debug_message("WWSM " + _sign + string(_amount) + " = " + string(global.wwsm) + " (from " + _source + ")");
 
     return _amount;
 }
 
 // =============================================================================
-// NOCNY TICK
+// SYSTEM EKONOMII - OFIARA (WALUTA)
 // =============================================================================
 
-/// scr_population_night_tick()
-/// Wywołuj na koniec każdej nocy (przy zmianie fazy na dzień)
-/// Obsługuje naturalny zanik, przyrost szaleństwa i warunki końca gry
-
-function scr_population_night_tick() {
-    show_debug_message("=== POPULATION NIGHT TICK ===");
-
-    // 1. Naturalny zanik WSM (wiara chrześcijańska dominuje)
-    global.myth_faith = max(0, global.myth_faith - global.wsm_decay_rate);
-
-    // 2. Naturalny zanik strachu
-    global.collective_fear = max(0, global.collective_fear - global.fear_decay_rate);
-
-    // 3. Przyrost szaleństwa ze strachu (funkcja logistyczna!)
-    var madness_growth = scr_logistic_madness_growth(global.collective_fear);
-    if (madness_growth > 0) {
-        scr_add_madness(madness_growth, "high_fear");
+/// scr_ofiara_spend(amount)
+/// Wydaje Ofiarę (walutę). Zwraca true jeśli sukces.
+/// Ofiara nie może spaść poniżej 0.
+function scr_ofiara_spend(_amount) {
+    if (global.ofiara >= _amount) {
+        global.ofiara -= _amount;
+        show_debug_message("OFIARA SPEND: -" + string(_amount) + " = " + string(global.ofiara));
+        return true;
     }
+    return false;
+}
 
-    // 4. Bardzo wolny zanik szaleństwa
-    global.collective_madness = max(0, global.collective_madness - global.madness_decay_rate);
+/// scr_ofiara_can_afford(amount)
+/// Sprawdza czy gracza stać na wydatek w Ofiarze
+function scr_ofiara_can_afford(_amount) {
+    return (global.ofiara >= _amount);
+}
 
-    // 5. Sprawdź warunki wygranej/przegranej
-    scr_check_win_lose_conditions();
-
-    // Debug output
-    show_debug_message("WSM: " + string(global.myth_faith) +
-        " | FEAR: " + string(global.collective_fear) +
-        " | MADNESS: " + string(global.collective_madness));
-    show_debug_message("Susceptibility: " + string(scr_logistic_susceptibility(global.collective_fear)));
+/// scr_ofiara_get()
+/// Zwraca aktualną ilość Ofiary
+function scr_ofiara_get() {
+    return global.ofiara;
 }
 
 // =============================================================================
-// WARUNKI WYGRANEJ / PRZEGRANEJ
+// SYSTEM ODWIEDZIN - GRACZ
 // =============================================================================
 
-/// scr_check_win_lose_conditions()
-/// Sprawdza warunki końca gry
+/// scr_visit_check_and_apply_player(_place_inst, _place_type)
+/// Sprawdza czy gracz już odwiedził karczmę dziś i przyznaje zasoby
+/// UWAGA: Tylko karczma reaguje na gracza! Settlement/Encounter/Source reagują na NPC.
+/// @param _place_inst - instancja miejsca
+/// @param _place_type - "tavern" (inne typy ignorowane)
+/// @return true jeśli zasoby zostały przyznane, false jeśli już odwiedzono
+function scr_visit_check_and_apply_player(_place_inst, _place_type) {
+    if (!instance_exists(_place_inst)) return false;
 
-function scr_check_win_lose_conditions() {
-    // === PROGI WYGRANEJ ===
-    var WIN_THRESHOLD = 80;       // WSM >= 80%
-    var WIN_NIGHTS_REQUIRED = 5;  // przez 5 nocy
-    var WIN_MAX_MADNESS = 30;     // przy szaleństwie < 30%
-
-    // === PROGI PRZEGRANEJ (brak wiary) ===
-    var LOSE_WSM_THRESHOLD = 10;  // WSM <= 10%
-    var LOSE_NIGHTS_REQUIRED = 7; // przez 7 nocy
-
-    // === PRÓG PRZEGRANEJ (szaleństwo) ===
-    var LOSE_MADNESS_THRESHOLD = 80; // szaleństwo >= 80%
-
-    // --- SPRAWDŹ WYGRANĄ ---
-    if (global.myth_faith >= WIN_THRESHOLD && global.collective_madness < WIN_MAX_MADNESS) {
-        global.win_counter++;
-        show_debug_message("WIN COUNTER: " + string(global.win_counter) + "/" + string(WIN_NIGHTS_REQUIRED));
-
-        if (global.win_counter >= WIN_NIGHTS_REQUIRED) {
-            global.game_won = true;
-            show_debug_message("!!! GAME WON - STARA WIARA ODRODZIONA !!!");
+    // Tylko karczma reaguje na gracza
+    if (_place_type == "tavern") {
+        if (global.visited_today.tavern_active) {
+            return false;
         }
-    } else {
-        global.win_counter = 0;
+        global.visited_today.tavern_active = true;
+        // Gracz w pobliżu karczmy: +1 Ofiara, +1 Strach
+        scr_add_ofiara(1, "tavern_player");
+        scr_add_strach(1, "tavern_player");
+        show_debug_message("VISIT: Gracz przy karczmie -> +1 Ofiara, +1 Strach");
+        return true;
     }
 
-    // --- SPRAWDŹ PRZEGRANĄ (brak wiary) ---
-    if (global.myth_faith <= LOSE_WSM_THRESHOLD) {
-        global.lose_counter++;
-        show_debug_message("LOSE COUNTER (low WSM): " + string(global.lose_counter) + "/" + string(LOSE_NIGHTS_REQUIRED));
-
-        if (global.lose_counter >= LOSE_NIGHTS_REQUIRED) {
-            global.game_lost = true;
-            global.game_lost_reason = "forgotten";
-            show_debug_message("!!! GAME LOST - MITY ZAPOMNIANE !!!");
-        }
-    } else {
-        global.lose_counter = 0;
-    }
-
-    // --- SPRAWDŹ PRZEGRANĄ (szaleństwo) ---
-    if (global.collective_madness >= LOSE_MADNESS_THRESHOLD) {
-        global.game_lost = true;
-        global.game_lost_reason = "madness";
-        show_debug_message("!!! GAME LOST - WIOSKA OSZALALA !!!");
-    }
+    return false;
 }
 
 // =============================================================================
-// INTEGRACJA Z ENCOUNTERAMI
+// SYSTEM ODWIEDZIN - NPC (raz na dobę PER NPC PER MIEJSCE)
+// =============================================================================
+
+/// scr_visit_check_and_apply_npc(_npc_inst, _place_inst, _place_type)
+/// Sprawdza czy ten NPC już dziś odwiedził to miejsce i przyznaje zasoby
+/// Zasoby są naliczane RAZ NA DOBĘ PER NPC PER MIEJSCE
+/// @param _npc_inst - instancja NPC
+/// @param _place_inst - instancja miejsca
+/// @param _place_type - "settlement", "encounter", "source"
+/// @return true jeśli zasoby zostały przyznane
+function scr_visit_check_and_apply_npc(_npc_inst, _place_inst, _place_type) {
+    if (!instance_exists(_place_inst)) return false;
+    if (!instance_exists(_npc_inst)) return false;
+    if (!variable_instance_exists(_npc_inst, "npc_data")) return false;
+
+    var nd = _npc_inst.npc_data;
+    var place_id = _place_inst.id;
+
+    // Upewnij się że NPC ma strukturę visited_places_today
+    if (!variable_struct_exists(nd, "visited_places_today")) {
+        nd.visited_places_today = {
+            settlements: [],
+            encounters: [],
+            sources: []
+        };
+    }
+
+    // Sprawdź czy TEN NPC już dziś odwiedził to miejsce
+    switch (_place_type) {
+        case "settlement":
+            if (scr_array_contains(nd.visited_places_today.settlements, place_id)) {
+                return false;
+            }
+            array_push(nd.visited_places_today.settlements, place_id);
+            scr_apply_settlement_resources(_place_inst, "npc_" + string(_npc_inst.id));
+            return true;
+
+        case "encounter":
+            if (scr_array_contains(nd.visited_places_today.encounters, place_id)) {
+                return false;
+            }
+            array_push(nd.visited_places_today.encounters, place_id);
+            scr_apply_encounter_resources(_place_inst, "npc_" + string(_npc_inst.id));
+            return true;
+
+        case "source":
+            if (scr_array_contains(nd.visited_places_today.sources, place_id)) {
+                return false;
+            }
+            array_push(nd.visited_places_today.sources, place_id);
+            scr_apply_source_resources(_place_inst, "npc_" + string(_npc_inst.id));
+            return true;
+    }
+
+    return false;
+}
+
+/// scr_visit_check_and_apply_servant - ALIAS dla kompatybilności wstecznej
+function scr_visit_check_and_apply_servant(_npc_inst, _place_inst, _place_type) {
+    return scr_visit_check_and_apply_npc(_npc_inst, _place_inst, _place_type);
+}
+
+// =============================================================================
+// UNIWERSALNY SYSTEM APLIKOWANIA ZASOBÓW (UJEDNOLICONY)
+// =============================================================================
+// Każde miejsce ma bazowe efekty, które mogą być ZASTĄPIONE przez aktywny trait.
+// Trait "Plotka" zastępuje bazowe efekty: +1 Strach (bez względu na typ miejsca)
+// =============================================================================
+
+/// scr_place_get_data(_place_inst)
+/// Zwraca dane miejsca (settlement_data, encounter_data, resource_data, tavern_data)
+function scr_place_get_data(_place_inst) {
+    if (!instance_exists(_place_inst)) return undefined;
+
+    if (variable_instance_exists(_place_inst, "settlement_data")) {
+        return _place_inst.settlement_data;
+    }
+    if (variable_instance_exists(_place_inst, "encounter_data")) {
+        return _place_inst.encounter_data;
+    }
+    if (variable_instance_exists(_place_inst, "resource_data")) {
+        return _place_inst.resource_data;
+    }
+    if (variable_instance_exists(_place_inst, "tavern_data")) {
+        return _place_inst.tavern_data;
+    }
+
+    return undefined;
+}
+
+/// scr_place_has_active_trait(_place_inst)
+/// Sprawdza czy miejsce ma aktywny trait (aktywowany i niewyga sły)
+function scr_place_has_active_trait(_place_inst) {
+    var pd = scr_place_get_data(_place_inst);
+    if (is_undefined(pd)) return false;
+
+    // Sprawdź czy jest trait i czy jest aktywny
+    if (!variable_struct_exists(pd, "active_trait")) return false;
+    if (pd.active_trait == noone) return false;
+    if (!variable_struct_exists(pd, "trait_days_remaining")) return false;
+
+    return pd.trait_days_remaining > 0;
+}
+
+/// scr_place_get_active_trait_def(_place_inst)
+/// Zwraca definicję aktywnego traitu lub undefined
+function scr_place_get_active_trait_def(_place_inst) {
+    var pd = scr_place_get_data(_place_inst);
+    if (is_undefined(pd)) return undefined;
+
+    if (!scr_place_has_active_trait(_place_inst)) return undefined;
+
+    // Pobierz definicję traitu z katalogu
+    return scr_trait_get_definition(pd.active_trait);
+}
+
+/// scr_place_activate_trait(_place_inst, _trait_name)
+/// Aktywuje trait na miejscu (rozpoczyna odliczanie dni)
+function scr_place_activate_trait(_place_inst, _trait_name) {
+    var pd = scr_place_get_data(_place_inst);
+    if (is_undefined(pd)) return false;
+
+    var def = scr_trait_get_definition(_trait_name);
+    if (is_undefined(def)) return false;
+
+    pd.active_trait = _trait_name;
+    pd.trait_days_remaining = variable_struct_exists(def, "activation_days") ? def.activation_days : 1;
+    pd.trait_last_activated_day = variable_global_exists("day_counter") ? global.day_counter : 0;
+
+    var place_type = variable_struct_exists(pd, "place_type") ? pd.place_type : "unknown";
+    show_debug_message("TRAIT ACTIVATED: " + _trait_name + " on " + place_type + " for " + string(pd.trait_days_remaining) + " days");
+
+    return true;
+}
+
+/// scr_place_apply_visit_effects(_place_inst, _visitor_source)
+/// GŁÓWNA FUNKCJA - aplikuje efekty odwiedzenia miejsca
+/// Jeśli miejsce ma aktywny trait - używa efektów traitu
+/// Jeśli nie - używa bazowych efektów miejsca
+function scr_place_apply_visit_effects(_place_inst, _visitor_source) {
+    var pd = scr_place_get_data(_place_inst);
+    if (is_undefined(pd)) return;
+
+    var place_type = variable_struct_exists(pd, "place_type") ? pd.place_type : "unknown";
+    var strach_change = 0;
+    var ofiara_change = 0;
+    var wwsm_change = 0;
+
+    // === SPRAWDŹ CZY JEST AKTYWNY TRAIT ===
+    if (scr_place_has_active_trait(_place_inst)) {
+        // Trait ZASTĘPUJE bazowe efekty
+        var trait_def = scr_place_get_active_trait_def(_place_inst);
+        if (!is_undefined(trait_def)) {
+            strach_change = variable_struct_exists(trait_def, "strach_bonus") ? trait_def.strach_bonus : 0;
+            ofiara_change = variable_struct_exists(trait_def, "ofiara_bonus") ? trait_def.ofiara_bonus : 0;
+            wwsm_change = variable_struct_exists(trait_def, "wwsm_bonus") ? trait_def.wwsm_bonus : 0;
+
+            show_debug_message("VISIT: " + _visitor_source + " @ " + place_type + " [TRAIT: " + pd.active_trait + "]");
+        }
+    } else {
+        // Użyj BAZOWYCH efektów miejsca
+        if (variable_struct_exists(pd, "base_effects")) {
+            strach_change = variable_struct_exists(pd.base_effects, "strach") ? pd.base_effects.strach : 0;
+            ofiara_change = variable_struct_exists(pd.base_effects, "ofiara") ? pd.base_effects.ofiara : 0;
+            wwsm_change = variable_struct_exists(pd.base_effects, "wwsm") ? pd.base_effects.wwsm : 0;
+        }
+
+        // Specjalny przypadek: encounter musi być aktywny aby dawać efekty
+        if (place_type == "encounter") {
+            var is_active = variable_struct_exists(pd, "active") ? pd.active : false;
+            if (!is_active) {
+                // Nieaktywny encounter - tylko strach, bez Ofiary i WwSM
+                ofiara_change = 0;
+                wwsm_change = 0;
+            }
+        }
+
+        show_debug_message("VISIT: " + _visitor_source + " @ " + place_type + " [BASE EFFECTS]");
+    }
+
+    // === APLIKUJ EFEKTY ===
+    if (strach_change != 0) {
+        scr_add_strach(strach_change, place_type + "_" + _visitor_source);
+    }
+    if (ofiara_change != 0) {
+        scr_add_ofiara(ofiara_change, place_type + "_" + _visitor_source);
+    }
+    if (wwsm_change != 0) {
+        scr_add_wwsm(wwsm_change, place_type + "_" + _visitor_source);
+    }
+
+    var effect_str = "";
+    if (strach_change != 0) effect_str += (strach_change > 0 ? "+" : "") + string(strach_change) + " Strach ";
+    if (ofiara_change != 0) effect_str += (ofiara_change > 0 ? "+" : "") + string(ofiara_change) + " Ofiara ";
+    if (wwsm_change != 0) effect_str += (wwsm_change > 0 ? "+" : "") + string(wwsm_change) + " WwSM";
+    if (effect_str == "") effect_str = "brak efektów";
+
+    show_debug_message("  -> " + effect_str);
+}
+
+// =============================================================================
+// STARE FUNKCJE - TERAZ WYWOŁUJĄ UNIWERSALNĄ
+// =============================================================================
+
+/// scr_apply_settlement_resources(_settlement, _source)
+/// Settlement: domyślnie brak efektów
+/// Jeśli ma aktywny trait - trait zastępuje bazowe efekty
+function scr_apply_settlement_resources(_settlement, _source) {
+    scr_place_apply_visit_effects(_settlement, _source);
+}
+
+/// scr_apply_encounter_resources(_encounter, _source)
+/// Encounter aktywny: domyślnie +1 Strach, +1 Ofiara
+/// Jeśli ma aktywny trait - trait zastępuje bazowe efekty
+function scr_apply_encounter_resources(_encounter, _source) {
+    scr_place_apply_visit_effects(_encounter, _source);
+}
+
+/// scr_apply_source_resources(_source_inst, _visitor_source)
+/// Source: domyślnie brak efektów
+/// Jeśli ma aktywny trait - trait zastępuje bazowe efekty
+function scr_apply_source_resources(_source_inst, _visitor_source) {
+    scr_place_apply_visit_effects(_source_inst, _visitor_source);
+}
+
+/// scr_apply_tavern_resources_servant - DEPRECATED
+/// Karczma reaguje na gracza, nie na NPC. Funkcja zachowana dla kompatybilności.
+function scr_apply_tavern_resources_servant(_tavern, _servant) {
+    // Karczma nie reaguje na NPC - tylko na gracza
+    show_debug_message("WARNING: scr_apply_tavern_resources_servant is deprecated");
+}
+
+// =============================================================================
+// RESET DZIENNY
+// =============================================================================
+
+/// scr_visit_daily_reset()
+/// Resetuje listę odwiedzonych miejsc - wywołaj przy zmianie dnia (morning)
+/// Zasoby są naliczane raz na dobę PER NPC PER MIEJSCE
+function scr_visit_daily_reset() {
+    // Reset dla gracza (tylko karczma)
+    global.visited_today.tavern_active = false;
+
+    // Reset dla wszystkich NPC (każdy ma własną listę)
+    for (var i = 0; i < ds_list_size(global.npcs); i++) {
+        var npc = global.npcs[| i];
+        if (instance_exists(npc) && variable_instance_exists(npc, "npc_data")) {
+            var nd = npc.npc_data;
+            if (variable_struct_exists(nd, "visited_places_today")) {
+                nd.visited_places_today.settlements = [];
+                nd.visited_places_today.encounters = [];
+                nd.visited_places_today.sources = [];
+                nd.visited_places_today.taverns = [];
+            }
+        }
+    }
+
+    // === TRAITS DAILY TICK - zmniejsz dni pozostałe dla aktywnych traits ===
+    scr_traits_daily_tick();
+
+    global.day_counter++;
+    show_debug_message("=== VISIT DAILY RESET (Day " + string(global.day_counter) + ") ===");
+    show_debug_message("Current resources: Ofiara=" + string(global.ofiara) + ", Strach=" + string(global.strach));
+}
+
+// =============================================================================
+// POMOCNICZE
+// =============================================================================
+
+/// scr_array_contains(array, value)
+/// Sprawdza czy array zawiera wartość
+function scr_array_contains(_array, _value) {
+    for (var i = 0; i < array_length(_array); i++) {
+        if (_array[i] == _value) return true;
+    }
+    return false;
+}
+
+/// scr_get_ofiara()
+/// Zwraca aktualną wartość Ofiary
+function scr_get_ofiara() {
+    return global.ofiara;
+}
+
+/// scr_get_strach()
+/// Zwraca aktualną wartość Strachu
+function scr_get_strach() {
+    return global.strach;
+}
+
+// =============================================================================
+// INTEGRACJA Z ENCOUNTERAMI (kompatybilność wsteczna)
 // =============================================================================
 
 /// scr_encounter_affect_population(encounter_inst)
-/// Wywołuj gdy NPC wchodzi w zasięg encountera
-/// Aplikuje efekty encountera na globalne wskaźniki populacji
-
+/// DEPRECATED - teraz używaj scr_visit_check_and_apply_*
+/// Zachowano dla kompatybilności wstecznej
 function scr_encounter_affect_population(_enc) {
-    if (!instance_exists(_enc)) return;
-    if (!variable_instance_exists(_enc, "encounter_data")) return;
-    if (is_undefined(_enc.encounter_data)) return;
-
-    var ed = _enc.encounter_data;
-
-    // Sprawdź czy encounter jest aktywny
-    if (variable_struct_exists(ed, "active") && !ed.active) return;
-
-    // Sprawdź czy aktywna faza dnia
-    if (variable_struct_exists(ed, "active_phases") && variable_global_exists("daynight_phase")) {
-        var current_phase = global.daynight_phase;
-        var is_active_phase = false;
-        for (var i = 0; i < array_length(ed.active_phases); i++) {
-            if (ed.active_phases[i] == current_phase) {
-                is_active_phase = true;
-                break;
-            }
-        }
-        if (!is_active_phase) return;
-    }
-
-    // Aplikuj efekty na wskaźniki globalne
-    if (variable_struct_exists(ed, "wsm_bonus") && ed.wsm_bonus > 0) {
-        scr_add_myth_faith(ed.wsm_bonus, "encounter_" + string(ed.typ));
-    }
-
-    if (variable_struct_exists(ed, "fear_bonus") && ed.fear_bonus > 0) {
-        scr_add_fear(ed.fear_bonus, "encounter_" + string(ed.typ));
-    }
-
-    if (variable_struct_exists(ed, "madness_bonus") && ed.madness_bonus > 0) {
-        scr_add_madness(ed.madness_bonus, "encounter_" + string(ed.typ));
-    }
-
-    // Reset licznika nieaktywności
-    if (variable_struct_exists(ed, "days_inactive")) {
-        ed.days_inactive = 0;
-    }
+    // Stara funkcja - nie rób nic, nowy system używa visit
+    show_debug_message("WARNING: scr_encounter_affect_population is deprecated, use visit system");
 }
 
 // =============================================================================
-// POMOCNICZE FUNKCJE
+// NOCNY TICK (uproszczony)
 // =============================================================================
 
-/// scr_get_susceptibility_description()
-/// Zwraca tekstowy opis aktualnej podatności
+/// scr_population_night_tick()
+/// DEPRECATED - zasoby nie zanikają naturalnie w nowym systemie
+function scr_population_night_tick() {
+    show_debug_message("=== NIGHT TICK (no decay in new system) ===");
+    show_debug_message("Ofiara: " + string(global.ofiara) + " | Strach: " + string(global.strach));
+}
+
+// =============================================================================
+// WARUNKI WYGRANEJ / PRZEGRANEJ (do dostosowania później)
+// =============================================================================
+
+/// scr_check_win_lose_conditions()
+/// Placeholder - do zdefiniowania w przyszłości
+function scr_check_win_lose_conditions() {
+    // TODO: Zdefiniować nowe warunki wygranej/przegranej
+    // Na razie brak automatycznych warunków końca gry
+}
+
+// =============================================================================
+// STARE FUNKCJE LOGISTYCZNE - USUNIĘTE
+// =============================================================================
+// Funkcje scr_logistic_susceptibility, scr_logistic_madness_growth,
+// scr_logistic_fear_effectiveness, scr_add_myth_faith, scr_add_fear,
+// scr_add_madness zostały usunięte w nowym systemie.
+// =============================================================================
+
+// === ALIASY DLA KOMPATYBILNOŚCI WSTECZNEJ ===
+// (zwracają nowe wartości)
 
 function scr_get_susceptibility_description() {
-    var fear = global.collective_fear;
+    return "System uproszczony";
+}
 
-    if (fear < 20) {
-        return "Ludzie pewni siebie";
-    } else if (fear < 35) {
-        return "Rosnie niepewnosc";
-    } else if (fear < 45) {
-        return "OPTYMALNA podatnosc";
-    } else if (fear < 60) {
-        return "Strach paralizuje";
-    } else {
-        return "Panika i chaos";
+function scr_get_fear_zone() {
+    if (global.strach < 0) return "low";
+    if (global.strach < 10) return "optimal";
+    if (global.strach < 20) return "high";
+    return "critical";
+}
+
+// Dla starego kodu który używał myth_faith (alias do Ofiary - waluty)
+#macro global.myth_faith global.ofiara
+// global.wwsm jest teraz OSOBNĄ zmienną (współczynnik, nie waluta!)
+#macro global.collective_fear global.strach
+
+// =============================================================================
+// SYSTEM TRAITS - AKTYWACJA I DZIENNY TICK
+// =============================================================================
+
+/// scr_place_has_trait(_place_inst, _trait_name)
+/// Sprawdza czy miejsce ma nadany trait (niezależnie czy aktywny)
+function scr_place_has_trait(_place_inst, _trait_name) {
+    var pd = scr_place_get_data(_place_inst);
+    if (is_undefined(pd)) return false;
+
+    if (!variable_struct_exists(pd, "traits")) return false;
+    var traits = pd.traits;
+
+    // Obsługa ds_list
+    if (ds_exists(traits, ds_type_list)) {
+        for (var i = 0; i < ds_list_size(traits); i++) {
+            var t = traits[| i];
+            if (is_struct(t) && variable_struct_exists(t, "name")) {
+                if (t.name == _trait_name) return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+/// scr_place_on_visit_activate_trait(_place_inst)
+/// Przy odwiedzeniu miejsca - jeśli ma nadany trait, aktywuj go
+/// Wywoływane automatycznie przy każdej wizycie
+function scr_place_on_visit_activate_trait(_place_inst) {
+    var pd = scr_place_get_data(_place_inst);
+    if (is_undefined(pd)) return;
+
+    // Sprawdź czy miejsce ma jakiekolwiek nadane traits
+    if (!variable_struct_exists(pd, "traits")) return;
+    var traits = pd.traits;
+
+    if (!ds_exists(traits, ds_type_list)) return;
+    if (ds_list_size(traits) == 0) return;
+
+    // Weź pierwszy trait z listy i aktywuj go
+    var first_trait = traits[| 0];
+    if (!is_struct(first_trait)) return;
+    if (!variable_struct_exists(first_trait, "name")) return;
+
+    var trait_name = first_trait.name;
+
+    // Aktywuj trait (odnów czas trwania)
+    scr_place_activate_trait(_place_inst, trait_name);
+}
+
+/// scr_traits_daily_tick()
+/// Wywoływane raz dziennie - zmniejsza dni pozostałe dla aktywnych traits
+/// Wywołaj w scr_visit_daily_reset() lub osobno
+function scr_traits_daily_tick() {
+    show_debug_message("=== TRAITS DAILY TICK ===");
+
+    // Settlements
+    if (variable_global_exists("settlements") && ds_exists(global.settlements, ds_type_list)) {
+        for (var i = 0; i < ds_list_size(global.settlements); i++) {
+            var place = global.settlements[| i];
+            scr_place_trait_tick(place);
+        }
+    }
+
+    // Encounters
+    if (variable_global_exists("encounters") && ds_exists(global.encounters, ds_type_list)) {
+        for (var i = 0; i < ds_list_size(global.encounters); i++) {
+            var place = global.encounters[| i];
+            scr_place_trait_tick(place);
+        }
+    }
+
+    // Resources (sources)
+    if (variable_global_exists("resources") && ds_exists(global.resources, ds_type_list)) {
+        for (var i = 0; i < ds_list_size(global.resources); i++) {
+            var place = global.resources[| i];
+            scr_place_trait_tick(place);
+        }
+    }
+
+    // Taverns
+    if (variable_global_exists("taverns") && ds_exists(global.taverns, ds_type_list)) {
+        for (var i = 0; i < ds_list_size(global.taverns); i++) {
+            var place = global.taverns[| i];
+            scr_place_trait_tick(place);
+        }
     }
 }
 
-/// scr_get_fear_zone()
-/// Zwraca strefę strachu: "low", "optimal", "high", "critical"
+/// scr_place_trait_tick(_place_inst)
+/// Zmniejsza dni pozostałe dla aktywnego traitu miejsca
+function scr_place_trait_tick(_place_inst) {
+    if (!instance_exists(_place_inst)) return;
 
-function scr_get_fear_zone() {
-    var fear = global.collective_fear;
+    var pd = scr_place_get_data(_place_inst);
+    if (is_undefined(pd)) return;
 
-    if (fear < global.fear_optimal_low) {
-        return "low";
-    } else if (fear < global.fear_optimal_high) {
-        return "optimal";
-    } else if (fear < global.fear_critical) {
-        return "high";
+    if (!variable_struct_exists(pd, "trait_days_remaining")) return;
+    if (pd.trait_days_remaining <= 0) return;
+
+    pd.trait_days_remaining -= 1;
+
+    var place_type = variable_struct_exists(pd, "place_type") ? pd.place_type : "unknown";
+    var trait_name = variable_struct_exists(pd, "active_trait") ? pd.active_trait : "none";
+
+    if (pd.trait_days_remaining <= 0) {
+        pd.active_trait = noone;
+        show_debug_message("TRAIT EXPIRED: " + trait_name + " on " + place_type);
     } else {
-        return "critical";
+        show_debug_message("TRAIT TICK: " + trait_name + " on " + place_type + " - " + string(pd.trait_days_remaining) + " dni pozostało");
     }
+}
+
+/// scr_visit_check_and_apply_npc_v2(_npc_inst, _place_inst)
+/// Nowa wersja - uniwersalna dla wszystkich typów miejsc
+/// Automatycznie aktywuje trait przy odwiedzeniu
+function scr_visit_check_and_apply_npc_v2(_npc_inst, _place_inst) {
+    if (!instance_exists(_place_inst)) return false;
+    if (!instance_exists(_npc_inst)) return false;
+    if (!variable_instance_exists(_npc_inst, "npc_data")) return false;
+
+    var nd = _npc_inst.npc_data;
+    var pd = scr_place_get_data(_place_inst);
+    if (is_undefined(pd)) return false;
+
+    var place_id = _place_inst.id;
+    var place_type = variable_struct_exists(pd, "place_type") ? pd.place_type : "unknown";
+
+    // Upewnij się że NPC ma strukturę visited_places_today
+    if (!variable_struct_exists(nd, "visited_places_today")) {
+        nd.visited_places_today = {
+            settlements: [],
+            encounters: [],
+            sources: [],
+            taverns: []
+        };
+    }
+
+    // Sprawdź czy TEN NPC już dziś odwiedził to miejsce
+    var visited_list_name = place_type + "s"; // settlements, encounters, sources, taverns
+    if (place_type == "source") visited_list_name = "sources";
+
+    if (!variable_struct_exists(nd.visited_places_today, visited_list_name)) {
+        nd.visited_places_today[$ visited_list_name] = [];
+    }
+
+    var visited_list = nd.visited_places_today[$ visited_list_name];
+    if (scr_array_contains(visited_list, place_id)) {
+        return false; // Już odwiedzone dziś
+    }
+
+    // Zaznacz jako odwiedzone
+    array_push(visited_list, place_id);
+    nd.visited_places_today[$ visited_list_name] = visited_list;
+
+    // === AKTYWUJ TRAIT JEŚLI MIEJSCE MA NADANY ===
+    scr_place_on_visit_activate_trait(_place_inst);
+
+    // === APLIKUJ EFEKTY WIZYTY ===
+    scr_place_apply_visit_effects(_place_inst, "npc_" + string(_npc_inst.id));
+
+    return true;
 }

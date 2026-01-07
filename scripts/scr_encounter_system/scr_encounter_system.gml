@@ -117,21 +117,26 @@ function scr_encounter_on_visit(_enc, _visitor, _is_sluga) {
         return false;
     }
 
-    // === BONUS WSM ===
-    if (ed.wsm_bonus > 0) {
-        if (variable_global_exists("myth_faith")) {
-            var wsm_before = global.myth_faith;
-            scr_myth_faith_add(ed.wsm_bonus);
-            show_debug_message("ENCOUNTER WSM: +" + string(ed.wsm_bonus) + " (było: " + string(wsm_before) + ", jest: " + string(global.myth_faith) + ")");
-        }
+    // === BONUS WwSM (Wiara w Stare Mity - współczynnik) ===
+    if (variable_struct_exists(ed, "wsm_bonus") && ed.wsm_bonus != 0) {
+        scr_add_wwsm(ed.wsm_bonus, "encounter_" + string(ed.typ));
+    }
+
+    // === BONUS OFIARA (waluta) ===
+    var ofiara_val = 0;
+    if (variable_struct_exists(ed, "ofiara_bonus")) {
+        ofiara_val = ed.ofiara_bonus;
+    } else if (variable_struct_exists(ed, "wsm_bonus")) {
+        // Legacy fallback: jeśli nie ma ofiara_bonus, użyj wsm_bonus
+        ofiara_val = ed.wsm_bonus;
+    }
+    if (ofiara_val > 0) {
+        scr_add_ofiara(ofiara_val, "encounter_" + string(ed.typ));
     }
 
     // === GLOBALNY STRACH ===
-    if (ed.global_fear_bonus > 0) {
-        if (variable_global_exists("global_fear")) {
-            global.global_fear += ed.global_fear_bonus;
-            show_debug_message("ENCOUNTER FEAR: +" + string(ed.global_fear_bonus) + " (total: " + string(global.global_fear) + ")");
-        }
+    if (ed.global_fear_bonus != 0) {
+        scr_add_strach(ed.global_fear_bonus, "encounter_" + string(ed.typ));
     }
 
     // === TRAITS DLA NPC ===

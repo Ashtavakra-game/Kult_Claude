@@ -1,7 +1,8 @@
 /// =============================================================================
-/// BORUTA - ZARZĄDZANIE CECHAMI LOKACJI
+/// BORUTA - ZARZĄDZANIE CECHAMI LOKACJI (TRAITS)
 /// =============================================================================
 /// Funkcje do nadawania, usuwania i aktualizacji cech w lokacjach
+/// NOWY SYSTEM: Traits są uniwersalne dla wszystkich typów miejsc
 /// =============================================================================
 
 // =============================================================================
@@ -22,30 +23,29 @@ function scr_trait_create_instance(_trait_name, _level) {
     var instance = {
         name: _trait_name,
         display_name: def.display_name,
-        level: _level,                    // I-Szept, II-Niepokój, III-Groza, IV-Legenda
-        duration: -1,                     // -1 = permanentna, >0 = kroki do wygaśnięcia
-        decay_rate: global.trait_config.base_decay_rate,
+        level: _level,
 
-        // Śledzenie eskalacji
-        active_nights: 0,                 // ile nocy była aktywna (do eskalacji)
-        last_night_active: -1,            // numer ostatniej nocy aktywności
+        // Czas trwania aktywacji (nowy system)
+        activation_days: variable_struct_exists(def, "activation_days") ? def.activation_days : 1,
 
-        // Śledzenie aktywacji (dla Zapomnianych Miejsc)
-        visitor_count: 0,
-        visitor_window_start: -1,
-        activated: false,
+        // Efekty przy odwiedzeniu
+        strach_bonus: variable_struct_exists(def, "strach_bonus") ? def.strach_bonus : 0,
+        ofiara_bonus: variable_struct_exists(def, "ofiara_bonus") ? def.ofiara_bonus : 0,
+
+        // Czy nadpisuje bazowe efekty miejsca
+        overrides_base_effects: variable_struct_exists(def, "overrides_base_effects") ? def.overrides_base_effects : true,
 
         // Kopiuj modyfikatory NPC z definicji (bezpieczne odczytywanie)
         npc_mods: {
-            pracowitosc: has_npc_mods ? def.npc_mods.pracowitosc : 0,
-            roztargnienie: has_npc_mods ? def.npc_mods.roztargnienie : 0,
-            ciekawosc: has_npc_mods ? def.npc_mods.ciekawosc : 0,
-            podatnosc: has_npc_mods ? def.npc_mods.podatnosc : 0,
-            towarzyskosc: has_npc_mods ? def.npc_mods.towarzyskosc : 0,
-            wanderlust: has_npc_mods ? def.npc_mods.wanderlust : 0
+            pracowitosc: has_npc_mods ? (variable_struct_exists(def.npc_mods, "pracowitosc") ? def.npc_mods.pracowitosc : 0) : 0,
+            roztargnienie: has_npc_mods ? (variable_struct_exists(def.npc_mods, "roztargnienie") ? def.npc_mods.roztargnienie : 0) : 0,
+            ciekawosc: has_npc_mods ? (variable_struct_exists(def.npc_mods, "ciekawosc") ? def.npc_mods.ciekawosc : 0) : 0,
+            podatnosc: has_npc_mods ? (variable_struct_exists(def.npc_mods, "podatnosc") ? def.npc_mods.podatnosc : 0) : 0,
+            towarzyskosc: has_npc_mods ? (variable_struct_exists(def.npc_mods, "towarzyskosc") ? def.npc_mods.towarzyskosc : 0) : 0,
+            wanderlust: has_npc_mods ? (variable_struct_exists(def.npc_mods, "wanderlust") ? def.npc_mods.wanderlust : 0) : 0
         },
 
-        // Efekty (z uwzględnieniem poziomu)
+        // Efekty (kompatybilność wsteczna)
         effects: scr_trait_calculate_effects(def, _level)
     };
 
@@ -56,8 +56,16 @@ function scr_trait_create_instance(_trait_name, _level) {
 /// Oblicza efekty cechy dla danego poziomu
 function scr_trait_calculate_effects(_def, _level) {
     var effects = {};
-    
-    // Skopiuj podstawowe efekty
+
+    // Nowe efekty z systemu Plotka
+    if (variable_struct_exists(_def, "strach_bonus")) {
+        effects.strach_bonus = _def.strach_bonus;
+    }
+    if (variable_struct_exists(_def, "ofiara_bonus")) {
+        effects.ofiara_bonus = _def.ofiara_bonus;
+    }
+
+    // Legacy efekty (dla kompatybilności)
     var effect_keys = [
         "local_fear_bonus", "encounter_strength_mult", "nightmare_chance",
         "productivity_mult", "flee_chance_base", "interaction_reduction",
@@ -66,30 +74,14 @@ function scr_trait_calculate_effects(_def, _level) {
         "gossip_speed_mult", "fear_spread", "priest_detection_bonus",
         "other_traits_cost_mult", "mutation_chance", "ec_generation_passive"
     ];
-    
+
     for (var i = 0; i < array_length(effect_keys); i++) {
         var key = effect_keys[i];
         if (variable_struct_exists(_def, key)) {
             effects[$ key] = variable_struct_get(_def, key);
         }
     }
-    
-    // Zastosuj skalowanie poziomów (jeśli istnieje)
-    if (variable_struct_exists(_def, "level_scaling")) {
-        var scaling = _def.level_scaling;
-        var idx = _level - 1; // poziomy 1-4 -> indeksy 0-3
-        
-        if (variable_struct_exists(scaling, "fear_bonus")) {
-            effects.local_fear_bonus = scaling.fear_bonus[idx];
-        }
-        if (variable_struct_exists(scaling, "productivity_mult")) {
-            effects.productivity_mult = scaling.productivity_mult[idx];
-        }
-        if (variable_struct_exists(scaling, "flee_chance")) {
-            effects.flee_chance_base = scaling.flee_chance[idx];
-        }
-    }
-    
+
     return effects;
 }
 
@@ -279,19 +271,163 @@ function scr_trait_apply_to_settlement_v2(_settlement, _trait_name) {
 /// Modyfikuje koszt na podstawie cech lokacji
 function scr_trait_apply_cost_modifiers(_settlement, _base_cost) {
     var cost = _base_cost;
-    var sd = _settlement.settlement_data;
-    
-    if (is_undefined(sd.traits)) return cost;
-    
+    var pd = scr_place_get_data(_settlement);
+    if (is_undefined(pd)) return cost;
+
+    if (!variable_struct_exists(pd, "traits")) return cost;
+    var traits = pd.traits;
+    if (!ds_exists(traits, ds_type_list)) return cost;
+
     // Sprawdź modyfikatory od istniejących cech
-    for (var i = 0; i < ds_list_size(sd.traits); i++) {
-        var trait = sd.traits[| i];
-        if (variable_struct_exists(trait.effects, "other_traits_cost_mult")) {
+    for (var i = 0; i < ds_list_size(traits); i++) {
+        var trait = traits[| i];
+        if (variable_struct_exists(trait, "effects") && variable_struct_exists(trait.effects, "other_traits_cost_mult")) {
             cost *= trait.effects.other_traits_cost_mult;
         }
     }
-    
+
     return round(cost);
+}
+
+// =============================================================================
+// UNIWERSALNE NADAWANIE TRAITS (wszystkie typy miejsc)
+// =============================================================================
+
+/// scr_trait_apply_to_place(_place_inst, _trait_name)
+/// Uniwersalna funkcja - nadaje trait do dowolnego miejsca
+/// @param _place_inst - instancja miejsca (settlement, encounter, source, tavern)
+/// @param _trait_name - nazwa traitu do nadania
+/// @return bool - czy sukces
+function scr_trait_apply_to_place(_place_inst, _trait_name) {
+    // === WALIDACJA ===
+    if (!scr_trait_can_act()) {
+        show_debug_message("TRAIT: Cannot apply - not night phase!");
+        return false;
+    }
+
+    if (!instance_exists(_place_inst)) {
+        show_debug_message("TRAIT: Place does not exist!");
+        return false;
+    }
+
+    var pd = scr_place_get_data(_place_inst);
+    if (is_undefined(pd)) {
+        show_debug_message("TRAIT: No place_data!");
+        return false;
+    }
+
+    var place_type = variable_struct_exists(pd, "place_type") ? pd.place_type : "unknown";
+
+    // Inicjalizuj traits jeśli brak
+    if (!variable_struct_exists(pd, "traits") || is_undefined(pd.traits)) {
+        pd.traits = ds_list_create();
+    }
+    if (!variable_struct_exists(pd, "trait_slots") || is_undefined(pd.trait_slots)) {
+        pd.trait_slots = 2;
+    }
+
+    var traits = pd.traits;
+
+    // Sprawdź wolne sloty
+    if (ds_list_size(traits) >= pd.trait_slots) {
+        show_debug_message("TRAIT: No free slots in " + place_type + "!");
+        return false;
+    }
+
+    // Sprawdź czy cecha już istnieje
+    for (var i = 0; i < ds_list_size(traits); i++) {
+        var existing = traits[| i];
+        if (is_struct(existing) && variable_struct_exists(existing, "name")) {
+            if (existing.name == _trait_name) {
+                show_debug_message("TRAIT: " + place_type + " already has trait '" + _trait_name + "'!");
+                return false;
+            }
+        }
+    }
+
+    // Pobierz definicję
+    var def = scr_trait_get_definition(_trait_name);
+    if (is_undefined(def)) {
+        show_debug_message("TRAIT: Unknown trait '" + _trait_name + "'!");
+        return false;
+    }
+
+    // Sprawdź czy cecha jest dynamiczna (do nadania)
+    if (def.type != "dynamic" || def.base_cost < 0) {
+        show_debug_message("TRAIT: Trait '" + _trait_name + "' cannot be applied!");
+        return false;
+    }
+
+    // Sprawdź valid_locations
+    var loc_type = variable_struct_exists(pd, "location_type") ? pd.location_type : place_type;
+    if (variable_struct_exists(def, "valid_locations")) {
+        var valid = def.valid_locations;
+        if (array_length(valid) > 0 && valid[0] != "all") {
+            if (!array_contains(valid, loc_type) && !array_contains(valid, place_type)) {
+                show_debug_message("TRAIT: Trait '" + _trait_name + "' not valid for " + loc_type + "!");
+                return false;
+            }
+        }
+    }
+
+    // === OBLICZ KOSZT ===
+    var cost = scr_trait_get_cost(_trait_name, def.base_cost);
+    cost = scr_trait_apply_cost_modifiers(_place_inst, cost);
+
+    // Sprawdź czy stać (używamy WSM)
+    if (!scr_myth_faith_can_afford(cost)) {
+        show_debug_message("TRAIT: Not enough WSM! Need " + string(cost) + ", have " + string(scr_myth_faith_get()));
+        return false;
+    }
+
+    // === ZASTOSUJ CECHĘ ===
+    scr_myth_faith_spend(cost);
+
+    // Utwórz instancję cechy
+    var trait_inst = scr_trait_create_instance(_trait_name, 1);
+
+    // Dodaj do miejsca
+    ds_list_add(traits, trait_inst);
+
+    // Zaktualizuj globalny licznik użycia
+    scr_trait_increment_usage(_trait_name);
+
+    show_debug_message("TRAIT: Applied '" + _trait_name + "' to " + place_type + " " + string(_place_inst.id) + " for " + string(cost) + " WSM");
+
+    return true;
+}
+
+/// scr_trait_remove_from_place(_place_inst, _trait_name)
+/// Usuwa trait z dowolnego miejsca
+function scr_trait_remove_from_place(_place_inst, _trait_name) {
+    var pd = scr_place_get_data(_place_inst);
+    if (is_undefined(pd)) return false;
+
+    if (!variable_struct_exists(pd, "traits")) return false;
+    var traits = pd.traits;
+    if (!ds_exists(traits, ds_type_list)) return false;
+
+    for (var i = ds_list_size(traits) - 1; i >= 0; i--) {
+        var trait = traits[| i];
+        if (is_struct(trait) && variable_struct_exists(trait, "name")) {
+            if (trait.name == _trait_name) {
+                ds_list_delete(traits, i);
+                scr_trait_decrement_usage(_trait_name);
+
+                // Reset aktywnego traitu jeśli to był ten
+                if (variable_struct_exists(pd, "active_trait") && pd.active_trait == _trait_name) {
+                    pd.active_trait = noone;
+                    pd.trait_days_remaining = 0;
+                }
+
+                var place_type = variable_struct_exists(pd, "place_type") ? pd.place_type : "unknown";
+                show_debug_message("TRAIT: Removed '" + _trait_name + "' from " + place_type);
+                return true;
+            }
+        }
+    }
+
+    return false;
 }
 
 // =============================================================================

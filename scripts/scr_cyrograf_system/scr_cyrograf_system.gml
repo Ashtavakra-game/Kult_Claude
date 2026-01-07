@@ -528,11 +528,11 @@ function scr_ui_draw_tavern_panel(_tavern, _x, _y) {
     draw_set_halign(fa_center);
     
     if (can_negotiate && visitor_count > 0) {
-        draw_text(_x + w/2, instr_y, "[Kliknij NPC] Negocjuj (" + string(CYROGRAF_BASE_COST_WSM) + " WSM, +" + string(CYROGRAF_SUCCESS_BONUS_EC) + " EC) | [ESC] Zamknij");
+        draw_text(_x + w/2, instr_y, "[Kliknij NPC] Negocjuj | [T] Cechy | [ESC] Zamknij");
     } else {
-        draw_text(_x + w/2, instr_y, "[ESC] Zamknij");
+        draw_text(_x + w/2, instr_y, "[T] Cechy karczmy | [ESC] Zamknij");
     }
-    
+
     draw_set_halign(fa_left);
     draw_set_color(c_white);
 }
@@ -548,7 +548,14 @@ function scr_ui_tavern_panel_input(_tavern) {
         scr_ui_close_tavern_panel();
         return;
     }
-    
+
+    // Przejdź do panelu traits na T
+    if (keyboard_check_pressed(ord("T"))) {
+        scr_ui_close_tavern_panel();
+        scr_ui_open_location_panel(_tavern);
+        return;
+    }
+
     // Sprawdź kliknięcie
     if (!mouse_check_button_pressed(mb_left)) return;
     

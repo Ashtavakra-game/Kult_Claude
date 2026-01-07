@@ -6,46 +6,60 @@ if (!variable_instance_exists(id, "zasieg")) zasieg = 0;
 if (!variable_instance_exists(id, "sila_bonus")) sila_bonus = 0;
 if (!variable_instance_exists(id, "efekt")) efekt = "";
 if (!variable_instance_exists(id, "activation_days")) activation_days = 3;
-if (!variable_instance_exists(id, "wsm_bonus")) wsm_bonus = 3.0;
-if (!variable_instance_exists(id, "global_fear_bonus")) global_fear_bonus = 1.0;
+if (!variable_instance_exists(id, "wsm_bonus")) wsm_bonus = 1;      // WwSM - współczynnik (legacy: wsm_bonus)
+if (!variable_instance_exists(id, "ofiara_bonus")) ofiara_bonus = 1; // Ofiara - waluta
+if (!variable_instance_exists(id, "global_fear_bonus")) global_fear_bonus = 1;
 
 encounter_data = {
-    // Istniejące pola
+    // === LEGACY POLA (zachowane dla kompatybilności) ===
     typ: (typ != "") ? typ : "kapliczka",
-    zasieg: (zasieg != 0) ? zasieg : 120,
     sila: 1.0 + sila_bonus,
     poziom: 1,
     efekt: (efekt != "") ? efekt : "strach",
     rzadkosc: 50,
     akumulacja_strachu: 0,
 
-    // Nowe pola - system aktywności
-    active: true,                           // czy encounter jest aktywny
-    activation_days: activation_days,       // ile dni pozostaje aktywny po wizycie
-    days_remaining: activation_days,        // ile dni zostało do dezaktywacji
-    last_activated_day: 0,                  // dzień ostatniej aktywacji
+    // === UJEDNOLICONY SYSTEM MIEJSC ===
+    place_type: "encounter",                // typ miejsca
+    location_type: (typ != "") ? typ : "kapliczka", // podtyp lokacji
+    zasieg: (zasieg != 0) ? zasieg : 120,   // zasięg aktywacji
 
-    // Nowe pola - bonusy dla systemu populacji
-    wsm_bonus: wsm_bonus,                   // bonus do Wiary w Stare Mity
-    fear_bonus: global_fear_bonus,          // bonus do Strachu Zbiorowego
-    global_fear_bonus: global_fear_bonus,   // (legacy) bonus do global.global_fear
-    madness_bonus: 0,                       // bonus do Szaleństwa (zazwyczaj 0)
+    // === BAZOWE EFEKTY (gdy encounter AKTYWNY, bez trait) ===
+    // Encounter to "statyczny trait" - sam w sobie jest jak trait
+    base_effects: {
+        strach: global_fear_bonus,          // +1 Strach (domyślnie)
+        ofiara: ofiara_bonus,               // +1 Ofiara - waluta (domyślnie)
+        wwsm: wsm_bonus                     // +1 WwSM - współczynnik (domyślnie)
+    },
 
-    // Nowe pola - żywotność encountera
-    max_inactive_days: 8,                   // ile dni bez odwiedzin zanim osłabnie
-    days_inactive: 0,                       // licznik dni bez odwiedzin
-    last_visited_by: noone,                 // kto ostatnio odwiedził
+    // === SYSTEM AKTYWNOŚCI ENCOUNTERA ===
+    // Encounter sam w sobie jest "aktywowany" - to jego główna mechanika
+    active: true,
+    activation_days: activation_days,       // ile dni pozostaje aktywny (domyślnie 3)
+    days_remaining: activation_days,
+    last_activated_day: 0,
 
-    // Nowe pola - zasięg i aktywność
-    effective_radius: (zasieg != 0) ? zasieg : 120, // zasięg działania
-    active_phases: ["evening", "night"],    // kiedy działa
+    // === SYSTEM TRAITS (opcjonalne - encounter może mieć dodatkowy trait) ===
+    trait_slots: 1,
+    traits: ds_list_create(),               // zmienione z [] na ds_list dla spójności
+    active_trait: noone,
+    trait_days_remaining: 0,
+    trait_last_activated_day: -1,
 
-    // Nowe pola - traits dla NPC
-    traits: [],                             // array cech do nadania odwiedzającym NPC
-
-    // Nowe pola - sprite'y (opcjonalne)
-    sprite_idle: noone,                     // sprite dla nieaktywnego encountera
-    sprite_active: noone                    // sprite dla aktywnego encountera
+    // === POLA LEGACY (dla kompatybilności wstecznej) ===
+    wsm_bonus: wsm_bonus,           // WwSM - współczynnik
+    ofiara_bonus: ofiara_bonus,     // Ofiara - waluta
+    fear_bonus: global_fear_bonus,
+    global_fear_bonus: global_fear_bonus,
+    madness_bonus: 0,
+    max_inactive_days: 8,
+    days_inactive: 0,
+    last_visited_by: noone,
+    effective_radius: (zasieg != 0) ? zasieg : 120,
+    active_phases: ["evening", "night"],
+    npc_traits: [],                         // przemianowane z traits
+    sprite_idle: noone,
+    sprite_active: noone
 };
 
 ds_list_add(global.encounters, id);

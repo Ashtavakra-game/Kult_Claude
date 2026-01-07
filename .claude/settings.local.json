@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(git add:*)",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nNaprawa systemu NPC i UI karczmy\n\n- Fix: NPC przy odwiedzeniu encountera teraz poprawnie przyznaje WSM\n  - Dodano cleanup path i zmianę stanu na \"at_encounter\" po obsłudze\n  - Dodano szczegółowe logowanie dla debugowania\n\n- Fix: Usunięto duplikaty gości w UI karczmy\n  - Dodano sprawdzenie duplikatów w scr_npc_create\n  - Dodano filtrowanie unikalnych NPC w scr_tavern_get_visitors_detailed\n  - Usunięto błędny kod inicjalizacyjny z funkcji rysującej panel\n\n- Fix: NPC nie opuszczają domów w nocy\n  - NPC w stanie \"resting\" pozostają w domu przez całą noc\n  - Usunięto możliwość szukania encounterów przez sługi w nocy\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nNaprawa systemu NPC i UI karczmy\n\n- Fix: NPC przy odwiedzeniu encountera teraz poprawnie przyznaje WSM\n  - Dodano cleanup path i zmianę stanu na \"at_encounter\" po obsłudze\n  - Dodano szczegółowe logowanie dla debugowania\n\n- Fix: Usunięto duplikaty gości w UI karczmy\n  - Dodano sprawdzenie duplikatów w scr_npc_create\n  - Dodano filtrowanie unikalnych NPC w scr_tavern_get_visitors_detailed\n  - Usunięto błędny kod inicjalizacyjny z funkcji rysującej panel\n\n- Fix: NPC nie opuszczają domów w nocy\n  - NPC w stanie \"resting\" pozostają w domu przez całą noc\n  - Usunięto możliwość szukania encounterów przez sługi w nocy\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push:*)",
+      "Bash(git commit:*)"
     ]
   }
 }

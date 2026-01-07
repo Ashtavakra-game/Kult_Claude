@@ -20,13 +20,15 @@ if (ui_active_panel == "encounter" && instance_exists(ui_selected_target)) {
     _draw_encounter_panel(ui_selected_target);
 }
 
-// === PASKI EKONOMII (WSM + EC) ===
-scr_ui_draw_economy_bars(10, 10, 180, 52);
+// === PASKI EKONOMII (Ofiara, WwSM, Strach, EC) ===
+scr_ui_draw_economy_bars(10, 10, 180, 68);
 
-// === PASKI WSKAŹNIKÓW POPULACJI (prawy górny róg) ===
-var pop_x = display_get_gui_width() - 240;
-var pop_y = 10;
-scr_ui_draw_population_bars(pop_x, pop_y, 220, 22, 6);
+// === NUMER DNIA (prawy górny róg) ===
+draw_set_color(c_white);
+draw_set_halign(fa_right);
+draw_set_valign(fa_top);
+draw_text(display_get_gui_width() - 10, 10, "Dzien: " + string(global.day_counter));
+draw_set_halign(fa_left);
 
 // === OVERLAY KOŃCA GRY ===
 scr_ui_draw_game_state_overlay();
@@ -129,15 +131,32 @@ function _draw_encounter_panel(_enc) {
     }
 
     // === BONUSY ===
-    if (variable_struct_exists(ed, "wsm_bonus") && ed.wsm_bonus > 0) {
-        draw_set_color(c_aqua);
-        draw_text(txt_x, txt_y, "Wiara: +" + string(ed.wsm_bonus) + " WSM");
+    // Ofiara (waluta)
+    var ofiara_val = 0;
+    if (variable_struct_exists(ed, "ofiara_bonus")) {
+        ofiara_val = ed.ofiara_bonus;
+    } else if (variable_struct_exists(ed, "wsm_bonus")) {
+        ofiara_val = ed.wsm_bonus; // legacy fallback
+    }
+    if (ofiara_val > 0) {
+        draw_set_color(c_yellow);
+        draw_text(txt_x, txt_y, "Ofiara: +" + string(ofiara_val));
         txt_y += line_h;
     }
 
-    if (variable_struct_exists(ed, "global_fear_bonus") && ed.global_fear_bonus > 0) {
+    // WwSM (współczynnik)
+    if (variable_struct_exists(ed, "wsm_bonus") && ed.wsm_bonus != 0) {
+        draw_set_color(c_aqua);
+        var wsm_sign = ed.wsm_bonus > 0 ? "+" : "";
+        draw_text(txt_x, txt_y, "WwSM: " + wsm_sign + string(ed.wsm_bonus));
+        txt_y += line_h;
+    }
+
+    // Strach (współczynnik)
+    if (variable_struct_exists(ed, "global_fear_bonus") && ed.global_fear_bonus != 0) {
         draw_set_color(c_orange);
-        draw_text(txt_x, txt_y, "Strach globalny: +" + string(ed.global_fear_bonus));
+        var fear_sign = ed.global_fear_bonus > 0 ? "+" : "";
+        draw_text(txt_x, txt_y, "Strach: " + fear_sign + string(ed.global_fear_bonus));
         txt_y += line_h;
     }
 

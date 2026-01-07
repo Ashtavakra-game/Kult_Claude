@@ -154,39 +154,28 @@ function scr_dark_essence_get() {
 }
 
 /// scr_myth_faith_add(amount)
-/// Dodaje Wiarę w Stare Mity (z limitem max)
+/// LEGACY: Dodaje Ofiarę (walutę). Używaj scr_add_ofiara() dla nowego kodu.
 function scr_myth_faith_add(_amount) {
-    if (!variable_global_exists("myth_faith")) {
-        global.myth_faith = 0;
-        global.myth_faith_max = 200;
-    }
-    global.myth_faith = min(global.myth_faith + _amount, global.myth_faith_max);
-    return global.myth_faith;
+    scr_add_ofiara(_amount, "myth_faith_add");
+    return global.ofiara;
 }
 
 /// scr_myth_faith_spend(amount)
-/// Wydaje Wiarę w Stare Mity. Zwraca true jeśli sukces.
+/// LEGACY: Wydaje Ofiarę. Używaj scr_ofiara_spend() dla nowego kodu.
 function scr_myth_faith_spend(_amount) {
-    if (!variable_global_exists("myth_faith")) return false;
-    if (global.myth_faith >= _amount) {
-        global.myth_faith -= _amount;
-        return true;
-    }
-    return false;
+    return scr_ofiara_spend(_amount);
 }
 
 /// scr_myth_faith_can_afford(amount)
-/// Sprawdza czy gracza stać na wydatek w WSM
+/// LEGACY: Sprawdza czy stać na Ofiarę. Używaj scr_ofiara_can_afford() dla nowego kodu.
 function scr_myth_faith_can_afford(_amount) {
-    if (!variable_global_exists("myth_faith")) return false;
-    return (global.myth_faith >= _amount);
+    return scr_ofiara_can_afford(_amount);
 }
 
 /// scr_myth_faith_get()
-/// Zwraca aktualną ilość WSM
+/// LEGACY: Zwraca Ofiarę. Używaj scr_ofiara_get() dla nowego kodu.
 function scr_myth_faith_get() {
-    if (!variable_global_exists("myth_faith")) return 0;
-    return global.myth_faith;
+    return scr_ofiara_get();
 }
 
 // =============================================================================

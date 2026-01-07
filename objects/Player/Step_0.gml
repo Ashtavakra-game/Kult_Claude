@@ -1,24 +1,23 @@
+/// Player Step Event
+/// Ruch gracza i detekcja karczmy dla systemu zasobów
 
-
-
-
-
-
+// === RUCH ===
 var _hor = keyboard_check(ord("D")) - keyboard_check(ord("A"));
 var _ver = keyboard_check(ord("S")) - keyboard_check(ord("W"));
 
 move_and_collide(_hor * move_speed, _ver * move_speed, obj_kolizja_parent);
 depth = -y;
 
-/*
-// W utwórz instancję lub w kodzie obiektu
-instance_create_layer(x, y, layer, obj_clear_fog);
+// === DETEKCJA KARCZMY DLA SYSTEMU ZASOBÓW ===
+// Karczma daje +1 Ofiara i +1 Strach gdy gracz jest w pobliżu (raz na dobę)
+var tavern_range = 80;
 
-// Albo jeśli masz już obiekt i chcesz mu dać widzenie:
-with (obj_moj_sprite) {
-    object_set_parent(object_index, obj_clear_fog);
-    vision_radius = 5;
+for (var i = 0; i < ds_list_size(global.taverns); i++) {
+    var tavern = global.taverns[| i];
+    if (instance_exists(tavern)) {
+        var dist = point_distance(x, y, tavern.x, tavern.y);
+        if (dist < tavern_range) {
+            scr_visit_check_and_apply_player(tavern, "tavern");
+        }
+    }
 }
-*/
-//add_vision_source(id, 3);
-//scr_light_flicker(my_light, 0.8, 0.15);

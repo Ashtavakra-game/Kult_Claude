@@ -36,14 +36,24 @@ settlement_data = {
     npc_kinds: "mezczyzna",
     residents: ds_list_create(),
     resources: ds_map_create(),
-    
-    // === NOWE: SYSTEM CECH ===
+
+    // === UJEDNOLICONY SYSTEM MIEJSC ===
+    place_type: "settlement",    // typ miejsca (settlement/encounter/source/tavern)
+    location_type: "chata",      // podtyp lokacji
+    zasieg: 80,                  // zasięg aktywacji (jak encounter)
+
+    // === BAZOWE EFEKTY (gdy brak aktywnych traits) ===
+    base_effects: {
+        strach: -1,              // settlement domyślnie: -1 Strach
+        ofiara: 0                // brak wpływu na Ofiarę
+    },
+
+    // === SYSTEM TRAITS ===
     trait_slots: 2,              // domyślnie 2 sloty na cechy
-    traits: ds_list_create(),    // lista aktywnych cech
-    trait_resistance: 0,         // odporność na nadawanie (0-100)
-    location_type: "chata",      // typ lokacji (do walidacji cech)
-    local_faith: 50,             // lokalna wiara (0-100)
-    accumulated_fear: 0          // akumulowany strach lokalny
+    traits: ds_list_create(),    // lista nadanych cech (definicje)
+    active_trait: noone,         // aktualnie aktywny trait (po odwiedzeniu)
+    trait_days_remaining: 0,     // ile dni pozostało aktywności traitu
+    trait_last_activated_day: -1 // dzień ostatniej aktywacji
 };
 
 // Sprite'y

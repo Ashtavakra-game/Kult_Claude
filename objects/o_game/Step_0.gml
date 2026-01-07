@@ -1,4 +1,4 @@
-/// STEP EVENT - o_game (ZAKTUALIZOWANY)
+/// STEP EVENT - o_game (ZAKTUALIZOWANY dla nowego systemu zasobów)
 
 // Jeśli nie mamy odniesienia do gracza — znajdź go
 if (player == noone) {
@@ -7,6 +7,19 @@ if (player == noone) {
     } else {
         return;
     }
+}
+
+// === SYSTEM ZMIANY DNIA - RESET WIZYT ===
+// Sprawdź czy zmieniła się faza z nocy na poranek
+if (variable_global_exists("daynight_phase")) {
+    var current_phase = global.daynight_phase;
+
+    if (global.last_phase == "night" && current_phase == "morning") {
+        // Nowy dzień - resetuj listy odwiedzonych miejsc
+        scr_visit_daily_reset();
+    }
+
+    global.last_phase = current_phase;
 }
 
 // === KAMERA ===
@@ -91,87 +104,72 @@ if (keyboard_check_pressed(vk_f12)) {
     show_debug_message("=== DEBUG F12 ===");
     show_debug_message("Settlements: " + string(ds_list_size(global.settlements)));
     show_debug_message("NPCs: " + string(ds_list_size(global.npcs)));
-    
+
     // Pokaż szczegóły settlements
     for (var i = 0; i < ds_list_size(global.settlements); i++) {
         var s = global.settlements[| i];
         if (instance_exists(s)) {
-            show_debug_message("  Settlement " + string(i) + ": id=" + string(s.id) + 
+            show_debug_message("  Settlement " + string(i) + ": id=" + string(s.id) +
                 " pos=(" + string(s.x) + "," + string(s.y) + ")" +
                 " residents=" + string(ds_list_size(s.settlement_data.residents)));
         }
     }
 }
 
-// === DEBUG: Panel systemu cech (F9) ===
-if (keyboard_check_pressed(vk_f9)) {
-    show_debug_message("=== TRAIT SYSTEM DEBUG ===");
-    show_debug_message("Dark Essence: " + string(global.dark_essence) + "/" + string(global.dark_essence_max));
-    show_debug_message("Global Faith: " + string(global.global_faith));
-    show_debug_message("Can Act (night): " + string(scr_trait_can_act()));
-    
-    // Pokaż cechy wszystkich settlements
-    for (var i = 0; i < ds_list_size(global.settlements); i++) {
-        var s = global.settlements[| i];
-        if (instance_exists(s)) {
-            var traits = scr_trait_settlement_get_all(s);
-            show_debug_message("Settlement " + string(s.id) + " traits: " + string(array_length(traits)));
-            for (var j = 0; j < array_length(traits); j++) {
-                show_debug_message("  - " + traits[j].name + " (lvl " + string(traits[j].level) + ")");
+// === DEBUG: Zasoby - Numpad ===
+// Numpad 1 - Dodaj Ofiarę
+if (keyboard_check_pressed(vk_numpad1)) {
+    scr_add_ofiara(5, "debug");
+    show_debug_message("DEBUG: +5 Ofiara. Total: " + string(global.ofiara));
+}
+
+// Numpad 2 - Odejmij Ofiarę
+if (keyboard_check_pressed(vk_numpad2)) {
+    scr_add_ofiara(-5, "debug");
+    show_debug_message("DEBUG: -5 Ofiara. Total: " + string(global.ofiara));
+}
+
+// Numpad 4 - Dodaj Strach
+if (keyboard_check_pressed(vk_numpad4)) {
+    scr_add_strach(5, "debug");
+    show_debug_message("DEBUG: +5 Strach. Total: " + string(global.strach));
+}
+
+// Numpad 5 - Odejmij Strach
+if (keyboard_check_pressed(vk_numpad5)) {
+    scr_add_strach(-5, "debug");
+    show_debug_message("DEBUG: -5 Strach. Total: " + string(global.strach));
+}
+
+// Numpad 0 - Debug info zasobów
+if (keyboard_check_pressed(vk_numpad0)) {
+    show_debug_message("=== RESOURCE DEBUG ===");
+    show_debug_message("Ofiara: " + string(global.ofiara));
+    show_debug_message("Strach: " + string(global.strach));
+    show_debug_message("Dzien: " + string(global.day_counter));
+    show_debug_message("Tavern (gracz): " + (global.visited_today.tavern_active ? "TAK" : "NIE"));
+
+    // Pokaż odwiedziny per NPC
+    show_debug_message("Odwiedziny NPC dzis:");
+    for (var i = 0; i < ds_list_size(global.npcs); i++) {
+        var npc = global.npcs[| i];
+        if (instance_exists(npc) && variable_instance_exists(npc, "npc_data")) {
+            var nd = npc.npc_data;
+            if (variable_struct_exists(nd, "visited_places_today")) {
+                var vpt = nd.visited_places_today;
+                var s_count = array_length(vpt.settlements);
+                var e_count = array_length(vpt.encounters);
+                var src_count = array_length(vpt.sources);
+                if (s_count > 0 || e_count > 0 || src_count > 0) {
+                    show_debug_message("  NPC " + string(npc.id) + ": S=" + string(s_count) + " E=" + string(e_count) + " Src=" + string(src_count));
+                }
             }
         }
     }
 }
 
-// === DEBUG: Dodaj EC (F7) ===
-if (keyboard_check_pressed(vk_f7)) {
-    scr_dark_essence_add(10);
-    show_debug_message("DEBUG: Added 10 EC. Total: " + string(global.dark_essence));
-}
-
-// === DEBUG: Nadaj cechę pierwszemu settlement (F8) ===
-if (keyboard_check_pressed(vk_f8)) {
-    if (ds_list_size(global.settlements) > 0) {
-        var s = global.settlements[| 0];
-        if (instance_exists(s)) {
-            var success = scr_trait_apply_to_settlement(s, "nawiedzenie");
-            show_debug_message("DEBUG: Apply 'nawiedzenie' to settlement " + string(s.id) + ": " + string(success));
-        }
-    }
-}
-
-// === DEBUG: Sprawdź encountery (F1) ===
-if (keyboard_check_pressed(vk_f1)) {
-    scr_debug_encounters();
-}
-
-// === DEBUG: Wskaźniki populacji (Numpad) ===
-// Numpad 1 - Dodaj WSM
-if (keyboard_check_pressed(vk_numpad1)) {
-    scr_add_myth_faith(10, "debug");
-    show_debug_message("DEBUG: +10 WSM. Total: " + string(global.myth_faith));
-}
-
-// Numpad 2 - Dodaj Fear
-if (keyboard_check_pressed(vk_numpad2)) {
-    scr_add_fear(10, "debug");
-    show_debug_message("DEBUG: +10 Fear. Total: " + string(global.collective_fear));
-}
-
-// Numpad 3 - Dodaj Madness
-if (keyboard_check_pressed(vk_numpad3)) {
-    scr_add_madness(10, "debug");
-    show_debug_message("DEBUG: +10 Madness. Total: " + string(global.collective_madness));
-}
-
-// Numpad 0 - Debug info populacji
-if (keyboard_check_pressed(vk_numpad0)) {
-    show_debug_message("=== POPULATION DEBUG ===");
-    show_debug_message("WSM: " + string(global.myth_faith) + "/" + string(global.myth_faith_max));
-    show_debug_message("Fear: " + string(global.collective_fear) + "/" + string(global.fear_max));
-    show_debug_message("Madness: " + string(global.collective_madness) + "/" + string(global.madness_max));
-    show_debug_message("Susceptibility: " + string(scr_logistic_susceptibility(global.collective_fear) * 100) + "%");
-    show_debug_message("Fear Zone: " + scr_get_fear_zone());
-    show_debug_message("Win Counter: " + string(global.win_counter) + "/5");
-    show_debug_message("Lose Counter: " + string(global.lose_counter) + "/7");
+// Numpad 9 - Wymuś reset dzienny
+if (keyboard_check_pressed(vk_numpad9)) {
+    scr_visit_daily_reset();
+    show_debug_message("DEBUG: Forced daily reset");
 }
